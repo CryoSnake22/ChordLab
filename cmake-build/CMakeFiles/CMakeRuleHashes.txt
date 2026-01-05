@@ -1,4 +1,0 @@
-# Hashes of file build rules.
-18b73831a5106390d09c128aeb05da91 Template_artefacts/JuceLibraryCode/Template_AU/PkgInfo
-4e0064b9ab7820edd1fa5f8ce8e52667 Template_artefacts/JuceLibraryCode/Template_Standalone/PkgInfo
-3af118e7779dd74b55fd74e4eb675bda Template_artefacts/JuceLibraryCode/Template_VST3/PkgInfo

@@ -5,7 +5,6 @@ project(
   Template
   VERSION 0.0.1
   LANGUAGES C CXX)
-
 find_package(JUCE CONFIG REQUIRED)
 
 set(CMAKE_CXX_STANDARD 17)
@@ -40,9 +39,9 @@ juce_add_plugin(
   IS_SYNTH
   FALSE
   NEEDS_MIDI_INPUT
-  FALSE
+  TRUE
   NEEDS_MIDI_OUTPUT
-  FALSE
+  TRUE
   IS_MIDI_EFFECT
   FALSE
   EDITOR_WANTS_KEYBOARD_FOCUS
@@ -60,7 +59,7 @@ juce_add_plugin(
   AU
   Standalone
   PRODUCT_NAME
-  "TapPluginTemplate")
+  "Template")
 
 # How we want our SourceFiles to appear in our IDE
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCE_FILES})
