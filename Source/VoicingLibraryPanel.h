@@ -36,18 +36,32 @@ private:
 
     AudioPluginAudioProcessor& processorRef;
 
+    // --- Normal mode components ---
     juce::Label headerLabel;
     juce::Label recordingIndicator;
     juce::ComboBox qualityFilter;
     juce::ListBox voicingList;
     juce::TextButton recordButton { "Record" };
     juce::TextButton deleteButton { "Delete" };
-    juce::TextEditor nameEditor;
+
+    // --- Confirmation mode components ---
+    juce::Label confirmHeader;
+    juce::Label confirmNameLabel;
+    juce::TextEditor confirmNameEditor;
+    juce::Label confirmRootLabel;
+    juce::ComboBox confirmRootCombo;
+    juce::Label confirmQualityLabel;
+    juce::ComboBox confirmQualityCombo;
+    juce::Label confirmAltLabel;
+    juce::TextEditor confirmAltEditor;
+    juce::TextButton confirmSaveButton { "Save" };
+    juce::TextButton confirmCancelButton { "Cancel" };
 
     // Recording state machine
-    enum class RecordState { Idle, Waiting, Capturing };
+    enum class RecordState { Idle, Waiting, Capturing, Confirming };
     RecordState recordState = RecordState::Idle;
     std::vector<int> capturedNotes;
+    Voicing pendingVoicing; // voicing being confirmed
 
     // Filtered list of voicings currently displayed
     std::vector<Voicing> displayedVoicings;
@@ -56,5 +70,13 @@ private:
     void onRecordToggle();
     void finishRecording();
     void cancelRecording();
+    void onConfirmSave();
     void onDelete();
+
+    void setNormalModeVisible (bool visible);
+    void setConfirmModeVisible (bool visible);
+    void layoutNormalMode (juce::Rectangle<int> area);
+    void layoutConfirmMode (juce::Rectangle<int> area);
+
+    void populateConfirmFields();
 };

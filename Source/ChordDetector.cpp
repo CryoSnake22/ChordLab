@@ -10,7 +10,9 @@ const std::vector<ChordDetector::ChordTemplate>& ChordDetector::getTemplates()
         { { 0, 2, 4, 7, 9, 11 }, ChordQuality::Maj13 },
         { { 0, 2, 3, 7, 9, 10 }, ChordQuality::Min13 },
 
-        // 5-note chords (11ths, 9ths, altered)
+        // 5-note chords (6/9, 11ths, 9ths, altered)
+        { { 0, 2, 4, 7, 9 },  ChordQuality::Maj69 },
+        { { 0, 2, 3, 7, 9 },  ChordQuality::Min69 },
         { { 0, 2, 4, 7, 10 }, ChordQuality::Dom9 },
         { { 0, 2, 4, 7, 11 }, ChordQuality::Maj9 },
         { { 0, 2, 3, 7, 10 }, ChordQuality::Min9 },
@@ -21,7 +23,7 @@ const std::vector<ChordDetector::ChordTemplate>& ChordDetector::getTemplates()
         { { 0, 2, 3, 5, 10 }, ChordQuality::Min11 },
         { { 0, 2, 4, 6, 11 }, ChordQuality::Maj7sharp11 },
 
-        // 4-note chords (7ths, 6ths, altered dominants)
+        // 4-note chords (7ths, 6ths, add9, altered dominants)
         { { 0, 4, 7, 11 }, ChordQuality::Maj7 },
         { { 0, 4, 7, 10 }, ChordQuality::Dom7 },
         { { 0, 3, 7, 10 }, ChordQuality::Min7 },
@@ -32,6 +34,8 @@ const std::vector<ChordDetector::ChordTemplate>& ChordDetector::getTemplates()
         { { 0, 4, 6, 10 }, ChordQuality::Dom7b5 },
         { { 0, 4, 7,  9 }, ChordQuality::Maj6 },
         { { 0, 3, 7,  9 }, ChordQuality::Min6 },
+        { { 0, 2, 4, 7 },  ChordQuality::Add9 },
+        { { 0, 2, 3, 7 },  ChordQuality::MinAdd9 },
 
         // 3-note chords (triads)
         { { 0, 4, 7 }, ChordQuality::Major },
@@ -83,6 +87,10 @@ juce::String ChordDetector::qualitySuffix (ChordQuality q)
         case ChordQuality::Dom13:         return "13";
         case ChordQuality::Maj13:         return "maj13";
         case ChordQuality::Min13:         return "m13";
+        case ChordQuality::Maj69:         return "6/9";
+        case ChordQuality::Min69:         return "m6/9";
+        case ChordQuality::Add9:          return "add9";
+        case ChordQuality::MinAdd9:       return "m(add9)";
         case ChordQuality::Sus2:          return "sus2";
         case ChordQuality::Sus4:          return "sus4";
         case ChordQuality::Unknown:       return "?";
@@ -145,11 +153,11 @@ ChordResult ChordDetector::detect (const std::vector<int>& midiNotes)
             if (! allMatch)
                 continue;
 
-            // Score: prefer more template notes matched, prefer root = bass note
-            // No penalty for extra notes — jazz voicings often have extensions
+            // Score: prefer more template notes matched, heavily prefer root = bass note
+            // Bass note is the strongest signal for root in jazz voicings
             int score = static_cast<int> (tmpl.intervals.size()) * 10;
             if (candidateRoot == bassPitchClass)
-                score += 8;
+                score += 30;
 
             if (score > bestScore)
             {

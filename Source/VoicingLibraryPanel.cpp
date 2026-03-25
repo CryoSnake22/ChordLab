@@ -2,15 +2,79 @@
 #include "PluginProcessor.h"
 #include "ChordDetector.h"
 
+static void addQualityItems (juce::ComboBox& combo)
+{
+    combo.addItem ("Major",      1);
+    combo.addItem ("Minor",      2);
+    combo.addItem ("Dom7",       3);
+    combo.addItem ("Maj7",       4);
+    combo.addItem ("Min7",       5);
+    combo.addItem ("Dim",        6);
+    combo.addItem ("Dim7",       7);
+    combo.addItem ("Aug",        8);
+    combo.addItem ("HalfDim7",   9);
+    combo.addItem ("MinMaj7",   10);
+    combo.addItem ("Maj6",      11);
+    combo.addItem ("Min6",      12);
+    combo.addItem ("Sus2",      13);
+    combo.addItem ("Sus4",      14);
+    combo.addItem ("N/A",       15);
+}
+
+static ChordQuality qualityFromComboId (int id)
+{
+    switch (id)
+    {
+        case 1:  return ChordQuality::Major;
+        case 2:  return ChordQuality::Minor;
+        case 3:  return ChordQuality::Dom7;
+        case 4:  return ChordQuality::Maj7;
+        case 5:  return ChordQuality::Min7;
+        case 6:  return ChordQuality::Diminished;
+        case 7:  return ChordQuality::Dim7;
+        case 8:  return ChordQuality::Augmented;
+        case 9:  return ChordQuality::HalfDim7;
+        case 10: return ChordQuality::MinMaj7;
+        case 11: return ChordQuality::Maj6;
+        case 12: return ChordQuality::Min6;
+        case 13: return ChordQuality::Sus2;
+        case 14: return ChordQuality::Sus4;
+        case 15: return ChordQuality::Unknown;
+        default: return ChordQuality::Unknown;
+    }
+}
+
+static int comboIdFromQuality (ChordQuality q)
+{
+    switch (q)
+    {
+        case ChordQuality::Major:       return 1;
+        case ChordQuality::Minor:       return 2;
+        case ChordQuality::Dom7:        return 3;
+        case ChordQuality::Maj7:        return 4;
+        case ChordQuality::Min7:        return 5;
+        case ChordQuality::Diminished:  return 6;
+        case ChordQuality::Dim7:        return 7;
+        case ChordQuality::Augmented:   return 8;
+        case ChordQuality::HalfDim7:    return 9;
+        case ChordQuality::MinMaj7:     return 10;
+        case ChordQuality::Maj6:        return 11;
+        case ChordQuality::Min6:        return 12;
+        case ChordQuality::Sus2:        return 13;
+        case ChordQuality::Sus4:        return 14;
+        default:                        return 15; // N/A
+    }
+}
+
 VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     : processorRef (processor)
 {
+    // --- Normal mode ---
     headerLabel.setText ("VOICING LIBRARY", juce::dontSendNotification);
     headerLabel.setFont (juce::FontOptions (16.0f, juce::Font::bold));
     headerLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     addAndMakeVisible (headerLabel);
 
-    // Recording indicator (hidden by default)
     recordingIndicator.setText ("REC", juce::dontSendNotification);
     recordingIndicator.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     recordingIndicator.setColour (juce::Label::textColourId, juce::Colour (0xFFFF3333));
@@ -18,7 +82,6 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     recordingIndicator.setVisible (false);
     addAndMakeVisible (recordingIndicator);
 
-    // Quality filter
     qualityFilter.addItem ("All", 1);
     qualityFilter.addItem ("Major", 2);
     qualityFilter.addItem ("Minor", 3);
@@ -31,23 +94,63 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     qualityFilter.onChange = [this] { updateDisplayedVoicings(); };
     addAndMakeVisible (qualityFilter);
 
-    // List
     voicingList.setModel (this);
     voicingList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF2A2A3E));
     voicingList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF444466));
     voicingList.setOutlineThickness (1);
     addAndMakeVisible (voicingList);
 
-    // Name editor for new voicings
-    nameEditor.setTextToShowWhenEmpty ("Voicing name...", juce::Colours::grey);
-    addAndMakeVisible (nameEditor);
-
-    // Buttons
     recordButton.onClick = [this] { onRecordToggle(); };
     addAndMakeVisible (recordButton);
 
     deleteButton.onClick = [this] { onDelete(); };
     addAndMakeVisible (deleteButton);
+
+    // --- Confirmation mode ---
+    auto labelStyle = [](juce::Label& l) {
+        l.setFont (juce::FontOptions (13.0f));
+        l.setColour (juce::Label::textColourId, juce::Colour (0xFFAABBCC));
+    };
+
+    confirmHeader.setText ("CONFIRM VOICING", juce::dontSendNotification);
+    confirmHeader.setFont (juce::FontOptions (16.0f, juce::Font::bold));
+    confirmHeader.setColour (juce::Label::textColourId, juce::Colours::white);
+    addChildComponent (confirmHeader);
+
+    confirmNameLabel.setText ("Name:", juce::dontSendNotification);
+    labelStyle (confirmNameLabel);
+    addChildComponent (confirmNameLabel);
+
+    confirmNameEditor.setTextToShowWhenEmpty ("Voicing name...", juce::Colours::grey);
+    addChildComponent (confirmNameEditor);
+
+    confirmRootLabel.setText ("Root:", juce::dontSendNotification);
+    labelStyle (confirmRootLabel);
+    addChildComponent (confirmRootLabel);
+
+    for (int i = 0; i < 12; ++i)
+        confirmRootCombo.addItem (ChordDetector::noteNameFromPitchClass (i), i + 1);
+    addChildComponent (confirmRootCombo);
+
+    confirmQualityLabel.setText ("Quality:", juce::dontSendNotification);
+    labelStyle (confirmQualityLabel);
+    addChildComponent (confirmQualityLabel);
+
+    addQualityItems (confirmQualityCombo);
+    addChildComponent (confirmQualityCombo);
+
+    confirmAltLabel.setText ("Alterations:", juce::dontSendNotification);
+    labelStyle (confirmAltLabel);
+    addChildComponent (confirmAltLabel);
+
+    confirmAltEditor.setTextToShowWhenEmpty ("#9#11b5 etc. (optional)", juce::Colours::grey);
+    addChildComponent (confirmAltEditor);
+
+    confirmSaveButton.onClick = [this] { onConfirmSave(); };
+    addChildComponent (confirmSaveButton);
+
+    confirmCancelButton.onClick = [this] { cancelRecording(); };
+    addChildComponent (confirmCancelButton);
 
     updateDisplayedVoicings();
 }
@@ -57,18 +160,54 @@ void VoicingLibraryPanel::paint (juce::Graphics& g)
     g.setColour (juce::Colour (0xFF222244));
     g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
 
-    // Red border when recording
-    if (recordState != RecordState::Idle)
+    if (recordState == RecordState::Waiting || recordState == RecordState::Capturing)
     {
         g.setColour (juce::Colour (0xFFFF3333));
         g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f, 2.0f);
     }
+    else if (recordState == RecordState::Confirming)
+    {
+        g.setColour (juce::Colour (0xFF4488CC));
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f, 2.0f);
+    }
+}
+
+void VoicingLibraryPanel::setNormalModeVisible (bool visible)
+{
+    headerLabel.setVisible (visible);
+    qualityFilter.setVisible (visible);
+    voicingList.setVisible (visible);
+    recordButton.setVisible (visible);
+    deleteButton.setVisible (visible);
+}
+
+void VoicingLibraryPanel::setConfirmModeVisible (bool visible)
+{
+    confirmHeader.setVisible (visible);
+    confirmNameLabel.setVisible (visible);
+    confirmNameEditor.setVisible (visible);
+    confirmRootLabel.setVisible (visible);
+    confirmRootCombo.setVisible (visible);
+    confirmQualityLabel.setVisible (visible);
+    confirmQualityCombo.setVisible (visible);
+    confirmAltLabel.setVisible (visible);
+    confirmAltEditor.setVisible (visible);
+    confirmSaveButton.setVisible (visible);
+    confirmCancelButton.setVisible (visible);
 }
 
 void VoicingLibraryPanel::resized()
 {
     auto area = getLocalBounds().reduced (8);
 
+    if (recordState == RecordState::Confirming)
+        layoutConfirmMode (area);
+    else
+        layoutNormalMode (area);
+}
+
+void VoicingLibraryPanel::layoutNormalMode (juce::Rectangle<int> area)
+{
     auto headerRow = area.removeFromTop (24);
     headerLabel.setBounds (headerRow.removeFromLeft (headerRow.getWidth() / 2));
     recordingIndicator.setBounds (headerRow);
@@ -84,11 +223,42 @@ void VoicingLibraryPanel::resized()
     recordButton.setBounds (bottomRow.removeFromRight (70));
     area.removeFromBottom (4);
 
-    auto nameRow = area.removeFromBottom (28);
-    nameEditor.setBounds (nameRow);
-    area.removeFromBottom (4);
-
     voicingList.setBounds (area);
+}
+
+void VoicingLibraryPanel::layoutConfirmMode (juce::Rectangle<int> area)
+{
+    confirmHeader.setBounds (area.removeFromTop (24));
+    area.removeFromTop (8);
+
+    auto row = [&]() -> juce::Rectangle<int> {
+        auto r = area.removeFromTop (26);
+        area.removeFromTop (4);
+        return r;
+    };
+
+    auto nameRow = row();
+    confirmNameLabel.setBounds (nameRow.removeFromLeft (80));
+    confirmNameEditor.setBounds (nameRow);
+
+    auto rootRow = row();
+    confirmRootLabel.setBounds (rootRow.removeFromLeft (80));
+    confirmRootCombo.setBounds (rootRow);
+
+    auto qualRow = row();
+    confirmQualityLabel.setBounds (qualRow.removeFromLeft (80));
+    confirmQualityCombo.setBounds (qualRow);
+
+    auto altRow = row();
+    confirmAltLabel.setBounds (altRow.removeFromLeft (80));
+    confirmAltEditor.setBounds (altRow);
+
+    area.removeFromTop (8);
+    auto buttonRow = area.removeFromTop (30);
+    int bw = (buttonRow.getWidth() - 8) / 2;
+    confirmSaveButton.setBounds (buttonRow.removeFromLeft (bw));
+    buttonRow.removeFromLeft (8);
+    confirmCancelButton.setBounds (buttonRow);
 }
 
 void VoicingLibraryPanel::refresh()
@@ -98,12 +268,11 @@ void VoicingLibraryPanel::refresh()
 
 void VoicingLibraryPanel::updateRecording (const std::vector<int>& activeNotes)
 {
-    if (recordState == RecordState::Idle)
+    if (recordState == RecordState::Idle || recordState == RecordState::Confirming)
         return;
 
     if (recordState == RecordState::Waiting)
     {
-        // Waiting for the user to start playing
         if (! activeNotes.empty())
         {
             recordState = RecordState::Capturing;
@@ -116,15 +285,9 @@ void VoicingLibraryPanel::updateRecording (const std::vector<int>& activeNotes)
     if (recordState == RecordState::Capturing)
     {
         if (! activeNotes.empty())
-        {
-            // Update captured notes to the current set (user might adjust fingers)
             capturedNotes = activeNotes;
-        }
         else
-        {
-            // All notes released — finish recording
             finishRecording();
-        }
     }
 }
 
@@ -143,7 +306,7 @@ void VoicingLibraryPanel::updateDisplayedVoicings()
 
     displayedVoicings.clear();
 
-    if (filterId == 1) // All
+    if (filterId == 1)
     {
         displayedVoicings = all;
     }
@@ -163,7 +326,7 @@ void VoicingLibraryPanel::updateDisplayedVoicings()
 
         for (const auto& v : all)
         {
-            if (filterId == 8) // "Other"
+            if (filterId == 8)
             {
                 if (v.quality != ChordQuality::Major && v.quality != ChordQuality::Minor &&
                     v.quality != ChordQuality::Dom7 && v.quality != ChordQuality::Maj7 &&
@@ -185,12 +348,10 @@ void VoicingLibraryPanel::onRecordToggle()
 {
     if (recordState != RecordState::Idle)
     {
-        // Cancel recording
         cancelRecording();
         return;
     }
 
-    // Enter recording mode
     recordState = RecordState::Waiting;
     capturedNotes.clear();
     recordButton.setButtonText ("Cancel");
@@ -208,41 +369,89 @@ void VoicingLibraryPanel::finishRecording()
         return;
     }
 
-    juce::String name = nameEditor.getText().trim();
-    if (name.isEmpty())
-    {
-        auto result = ChordDetector::detect (capturedNotes);
-        if (result.isValid())
-            name = result.displayName + " voicing";
-        else
-            name = "Voicing " + juce::String (processorRef.voicingLibrary.size() + 1);
-    }
-
-    auto voicing = VoicingLibrary::createFromNotes (capturedNotes, name);
-    processorRef.voicingLibrary.addVoicing (voicing);
-
-    nameEditor.clear();
+    // Create pending voicing and transition to confirmation
+    pendingVoicing = VoicingLibrary::createFromNotes (capturedNotes, "");
     capturedNotes.clear();
 
-    // Reset UI
+    recordState = RecordState::Confirming;
+    recordingIndicator.setVisible (false);
+
+    // Hide normal UI, show confirm UI
+    setNormalModeVisible (false);
+    setConfirmModeVisible (true);
+    populateConfirmFields();
+    resized();
+    repaint();
+}
+
+void VoicingLibraryPanel::populateConfirmFields()
+{
+    // Auto-detect chord for pre-filling
+    auto notes = VoicingLibrary::transposeToKey (pendingVoicing, pendingVoicing.octaveReference);
+    auto detected = ChordDetector::detect (notes);
+
+    // Pre-fill name
+    if (detected.isValid())
+        confirmNameEditor.setText (detected.displayName + " voicing");
+    else
+        confirmNameEditor.setText ("Voicing " + juce::String (processorRef.voicingLibrary.size() + 1));
+
+    // Pre-fill root
+    confirmRootCombo.setSelectedId (pendingVoicing.rootPitchClass + 1, juce::dontSendNotification);
+
+    // Pre-fill quality
+    confirmQualityCombo.setSelectedId (comboIdFromQuality (pendingVoicing.quality), juce::dontSendNotification);
+
+    // Clear alterations
+    confirmAltEditor.clear();
+}
+
+void VoicingLibraryPanel::onConfirmSave()
+{
+    // Read user's choices
+    juce::String name = confirmNameEditor.getText().trim();
+    if (name.isEmpty())
+        name = "Voicing " + juce::String (processorRef.voicingLibrary.size() + 1);
+
+    pendingVoicing.name = name;
+    pendingVoicing.rootPitchClass = confirmRootCombo.getSelectedId() - 1;
+    pendingVoicing.quality = qualityFromComboId (confirmQualityCombo.getSelectedId());
+    pendingVoicing.alterations = confirmAltEditor.getText().trim();
+
+    processorRef.voicingLibrary.addVoicing (pendingVoicing);
+    pendingVoicing = {};
+
+    // Return to normal mode
     recordState = RecordState::Idle;
+    setConfirmModeVisible (false);
+    setNormalModeVisible (true);
     recordButton.setButtonText ("Record");
     recordButton.setColour (juce::TextButton::buttonColourId,
                             getLookAndFeel().findColour (juce::TextButton::buttonColourId));
-    recordingIndicator.setVisible (false);
+    resized();
     repaint();
-
     updateDisplayedVoicings();
 }
 
 void VoicingLibraryPanel::cancelRecording()
 {
+    bool wasConfirming = (recordState == RecordState::Confirming);
+
     recordState = RecordState::Idle;
     capturedNotes.clear();
+    pendingVoicing = {};
     recordButton.setButtonText ("Record");
     recordButton.setColour (juce::TextButton::buttonColourId,
                             getLookAndFeel().findColour (juce::TextButton::buttonColourId));
     recordingIndicator.setVisible (false);
+
+    if (wasConfirming)
+    {
+        setConfirmModeVisible (false);
+        setNormalModeVisible (true);
+        resized();
+    }
+
     repaint();
 }
 
@@ -281,10 +490,10 @@ void VoicingLibraryPanel::paintListBoxItem (int rowNumber, juce::Graphics& g,
     g.setFont (14.0f);
     g.drawText (v.name, 8, 0, width - 80, height, juce::Justification::centredLeft);
 
-    // Show quality badge
+    // Show quality + alterations badge
     g.setColour (juce::Colour (0xFF88AACC));
     g.setFont (11.0f);
-    g.drawText (ChordDetector::qualitySuffix (v.quality),
+    g.drawText (v.getQualityLabel(),
                 width - 70, 0, 62, height, juce::Justification::centredRight);
 }
 

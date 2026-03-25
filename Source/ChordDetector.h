@@ -32,6 +32,10 @@ enum class ChordQuality
     Dom13,
     Maj13,
     Min13,
+    Maj69,
+    Min69,
+    Add9,
+    MinAdd9,
     Sus2,
     Sus4,
     Unknown

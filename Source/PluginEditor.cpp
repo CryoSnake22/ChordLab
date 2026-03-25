@@ -23,21 +23,36 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   chordDisplayLabel.setJustificationType(juce::Justification::centred);
   addAndMakeVisible(chordDisplayLabel);
 
-  // Keyboard
+  // Keyboard — wider keys, proper proportions
   keyboard.setAvailableRange(36, 96); // C2 to C7
+  keyboard.setKeyWidth(28.0f);
   addAndMakeVisible(keyboard);
 
   // Voicing library panel
   voicingLibraryPanel.onSelectionChanged = [this](const juce::String &voicingId) {
-    if (voicingId.isNotEmpty() && practicePanel.isPracticing())
+    if (voicingId.isNotEmpty() && practicePanel.isPracticing()) {
       practicePanel.startPractice(voicingId);
+    } else if (voicingId.isNotEmpty()) {
+      // Preview: highlight original voicing notes on keyboard
+      keyboard.clearAllColours();
+      const auto *v = processorRef.voicingLibrary.getVoicing(voicingId);
+      if (v != nullptr) {
+        auto notes = VoicingLibrary::transposeToKey(*v, v->octaveReference);
+        for (int note : notes)
+          keyboard.setKeyColour(note, KeyColour::Target);
+      }
+      keyboard.repaint();
+    } else {
+      keyboard.clearAllColours();
+      keyboard.repaint();
+    }
   };
   addAndMakeVisible(voicingLibraryPanel);
 
   // Practice panel
   addAndMakeVisible(practicePanel);
 
-  setSize(800, 600);
+  setSize(1000, 660);
   startTimerHz(60);
 }
 
@@ -62,7 +77,7 @@ void AudioPluginAudioProcessorEditor::resized() {
   chordDisplayLabel.setBounds(chordArea.reduced(10, 5));
 
   // Keyboard
-  auto keyboardArea = area.removeFromTop(100);
+  auto keyboardArea = area.removeFromTop(140);
   keyboard.setBounds(keyboardArea.reduced(8));
 
   // Bottom panels: library on left, practice on right
@@ -82,12 +97,21 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
   if (displayNotes.empty()) {
     chordDisplayLabel.setText("Play something...", juce::dontSendNotification);
   } else {
-    auto result = ChordDetector::detect(displayNotes);
-    if (result.isValid())
-      chordDisplayLabel.setText(result.displayName, juce::dontSendNotification);
-    else
-      chordDisplayLabel.setText("...", juce::dontSendNotification);
+    // Check user's voicing library first for a custom name match
+    juce::String customName;
+    if (processorRef.voicingLibrary.findByNotes(displayNotes, customName) != nullptr) {
+      chordDisplayLabel.setText(customName, juce::dontSendNotification);
+    } else {
+      auto result = ChordDetector::detect(displayNotes);
+      if (result.isValid())
+        chordDisplayLabel.setText(result.displayName, juce::dontSendNotification);
+      else
+        chordDisplayLabel.setText("...", juce::dontSendNotification);
+    }
   }
+
+  // Update recording state machine
+  voicingLibraryPanel.updateRecording(notes);
 
   // Update practice mode
   if (practicePanel.isPracticing())

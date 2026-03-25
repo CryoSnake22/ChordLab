@@ -9,10 +9,21 @@ struct Voicing
     juce::String id;
     juce::String name;
     ChordQuality quality = ChordQuality::Unknown;
+    juce::String alterations;    // user-defined extensions like "#9#11b5"
+    int rootPitchClass = 0;      // 0-11 (C=0), user-confirmed root
     std::vector<int> intervals;  // semitones from root, always starts with 0
     int octaveReference = 60;    // MIDI note of root when recorded
 
     bool isValid() const { return ! intervals.empty() && ! id.isEmpty(); }
+
+    // Build a display label: "So What voicing" or quality+alterations like "m7#11"
+    juce::String getQualityLabel() const
+    {
+        juce::String label = ChordDetector::qualitySuffix (quality);
+        if (alterations.isNotEmpty())
+            label += alterations;
+        return label.isEmpty() ? "N/A" : label;
+    }
 };
 
 class VoicingLibrary
@@ -34,6 +45,10 @@ public:
 
     // Transpose a voicing to a specific root note, returning absolute MIDI notes
     static std::vector<int> transposeToKey (const Voicing& v, int rootMidiNote);
+
+    // Match played MIDI notes against the library by interval pattern.
+    // Returns the matching voicing and the detected root note name, or nullptr if no match.
+    const Voicing* findByNotes (const std::vector<int>& midiNotes, juce::String& outDisplayName) const;
 
     // Serialization
     juce::ValueTree toValueTree() const;
