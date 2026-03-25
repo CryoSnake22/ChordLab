@@ -1,0 +1,240 @@
+#include "SpacedRepetition.h"
+#include <algorithm>
+#include <cmath>
+
+static double currentTimeSeconds()
+{
+    return juce::Time::currentTimeMillis() / 1000.0;
+}
+
+// --- SM-2 Algorithm ---
+
+void SpacedRepetitionEngine::applySuccess (PracticeRecord& r)
+{
+    r.successes++;
+    r.lastAttemptTime = currentTimeSeconds();
+    r.intervalDays *= r.easeFactor;
+    r.easeFactor = std::min (2.5, r.easeFactor + 0.1);
+}
+
+void SpacedRepetitionEngine::applyFailure (PracticeRecord& r)
+{
+    r.failures++;
+    r.lastAttemptTime = currentTimeSeconds();
+    r.intervalDays = 1.0;
+    r.easeFactor = std::max (1.3, r.easeFactor - 0.2);
+}
+
+double SpacedRepetitionEngine::getOverdueScore (const PracticeRecord& r,
+                                                 double currentTime)
+{
+    double elapsedDays = (currentTime - r.lastAttemptTime) / 86400.0;
+    return elapsedDays / r.intervalDays; // > 1.0 means overdue
+}
+
+// --- Record management ---
+
+PracticeRecord* SpacedRepetitionEngine::findRecord (const juce::String& voicingId,
+                                                     int keyIndex)
+{
+    for (auto& r : records)
+        if (r.voicingId == voicingId && r.keyIndex == keyIndex)
+            return &r;
+    return nullptr;
+}
+
+const PracticeRecord* SpacedRepetitionEngine::findRecord (
+    const juce::String& voicingId, int keyIndex) const
+{
+    for (const auto& r : records)
+        if (r.voicingId == voicingId && r.keyIndex == keyIndex)
+            return &r;
+    return nullptr;
+}
+
+PracticeRecord& SpacedRepetitionEngine::getOrCreateRecord (
+    const juce::String& voicingId, int keyIndex)
+{
+    auto* existing = findRecord (voicingId, keyIndex);
+    if (existing != nullptr)
+        return *existing;
+
+    PracticeRecord newRecord;
+    newRecord.voicingId = voicingId;
+    newRecord.keyIndex = keyIndex;
+    records.push_back (newRecord);
+    return records.back();
+}
+
+// --- Public API ---
+
+void SpacedRepetitionEngine::recordSuccess (const juce::String& voicingId,
+                                             int keyIndex)
+{
+    auto& r = getOrCreateRecord (voicingId, keyIndex);
+    applySuccess (r);
+}
+
+void SpacedRepetitionEngine::recordFailure (const juce::String& voicingId,
+                                             int keyIndex)
+{
+    auto& r = getOrCreateRecord (voicingId, keyIndex);
+    applyFailure (r);
+}
+
+PracticeChallenge SpacedRepetitionEngine::getNextChallenge (
+    const juce::String& voicingId) const
+{
+    double now = currentTimeSeconds();
+    double bestScore = -1.0;
+    int bestKey = -1;
+
+    // Check all 12 keys
+    for (int key = 0; key < 12; ++key)
+    {
+        const auto* r = findRecord (voicingId, key);
+        double score;
+
+        if (r == nullptr)
+        {
+            // Never practiced = highest priority (score 100)
+            score = 100.0;
+        }
+        else
+        {
+            score = getOverdueScore (*r, now);
+            // Boost keys with more failures
+            if (r->failures > r->successes)
+                score *= 1.5;
+        }
+
+        if (score > bestScore)
+        {
+            bestScore = score;
+            bestKey = key;
+        }
+    }
+
+    if (bestKey < 0)
+        bestKey = 0;
+
+    PracticeChallenge challenge;
+    challenge.voicingId = voicingId;
+    challenge.keyIndex = bestKey;
+    challenge.rootMidiNote = 48 + bestKey; // C3 octave base
+    return challenge;
+}
+
+PracticeChallenge SpacedRepetitionEngine::getNextChallenge (
+    const std::vector<juce::String>& voicingIds) const
+{
+    if (voicingIds.empty())
+        return {};
+
+    double now = currentTimeSeconds();
+    double bestScore = -1.0;
+    PracticeChallenge bestChallenge;
+
+    for (const auto& vid : voicingIds)
+    {
+        for (int key = 0; key < 12; ++key)
+        {
+            const auto* r = findRecord (vid, key);
+            double score;
+
+            if (r == nullptr)
+                score = 100.0;
+            else
+            {
+                score = getOverdueScore (*r, now);
+                if (r->failures > r->successes)
+                    score *= 1.5;
+            }
+
+            if (score > bestScore)
+            {
+                bestScore = score;
+                bestChallenge.voicingId = vid;
+                bestChallenge.keyIndex = key;
+                bestChallenge.rootMidiNote = 48 + key;
+            }
+        }
+    }
+
+    return bestChallenge;
+}
+
+int SpacedRepetitionEngine::getTotalAttempts() const
+{
+    int total = 0;
+    for (const auto& r : records)
+        total += r.successes + r.failures;
+    return total;
+}
+
+int SpacedRepetitionEngine::getTotalSuccesses() const
+{
+    int total = 0;
+    for (const auto& r : records)
+        total += r.successes;
+    return total;
+}
+
+double SpacedRepetitionEngine::getAccuracy() const
+{
+    int attempts = getTotalAttempts();
+    if (attempts == 0)
+        return 0.0;
+    return static_cast<double> (getTotalSuccesses()) / attempts;
+}
+
+// --- Serialization ---
+
+static const juce::Identifier ID_SpacedRepetition ("SpacedRepetition");
+static const juce::Identifier ID_Record ("Record");
+static const juce::Identifier ID_voicingId ("voicingId");
+static const juce::Identifier ID_key ("key");
+static const juce::Identifier ID_successes ("successes");
+static const juce::Identifier ID_failures ("failures");
+static const juce::Identifier ID_lastAttempt ("lastAttempt");
+static const juce::Identifier ID_interval ("interval");
+static const juce::Identifier ID_ease ("ease");
+
+juce::ValueTree SpacedRepetitionEngine::toValueTree() const
+{
+    juce::ValueTree tree (ID_SpacedRepetition);
+    for (const auto& r : records)
+    {
+        juce::ValueTree child (ID_Record);
+        child.setProperty (ID_voicingId, r.voicingId, nullptr);
+        child.setProperty (ID_key, r.keyIndex, nullptr);
+        child.setProperty (ID_successes, r.successes, nullptr);
+        child.setProperty (ID_failures, r.failures, nullptr);
+        child.setProperty (ID_lastAttempt, r.lastAttemptTime, nullptr);
+        child.setProperty (ID_interval, r.intervalDays, nullptr);
+        child.setProperty (ID_ease, r.easeFactor, nullptr);
+        tree.appendChild (child, nullptr);
+    }
+    return tree;
+}
+
+void SpacedRepetitionEngine::fromValueTree (const juce::ValueTree& tree)
+{
+    records.clear();
+    for (int i = 0; i < tree.getNumChildren(); ++i)
+    {
+        auto child = tree.getChild (i);
+        if (child.hasType (ID_Record))
+        {
+            PracticeRecord r;
+            r.voicingId = child.getProperty (ID_voicingId).toString();
+            r.keyIndex = child.getProperty (ID_key, 0);
+            r.successes = child.getProperty (ID_successes, 0);
+            r.failures = child.getProperty (ID_failures, 0);
+            r.lastAttemptTime = child.getProperty (ID_lastAttempt, 0.0);
+            r.intervalDays = child.getProperty (ID_interval, 1.0);
+            r.easeFactor = child.getProperty (ID_ease, 2.5);
+            records.push_back (r);
+        }
+    }
+}

@@ -1,35 +1,28 @@
 cmake_minimum_required(VERSION 3.24)
 
 # Change to your project name
+
 project(
-  Template
+  Chordy
   VERSION 0.0.1
   LANGUAGES C CXX)
-find_package(JUCE CONFIG REQUIRED)
+
+add_subdirectory(JUCE)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_XCODE_GENERATE_SCHEME OFF)
 set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
-# We're going to use CPM as our package manager to bring in JUCE Check to see if
-# we have CPM installed already.  Bring it in if we don't.
-# set(CPM_DOWNLOAD_VERSION 0.34.0) set(CPM_DOWNLOAD_LOCATION
-# "${CMAKE_BINARY_DIR}/cmake/CPM_${CPM_DOWNLOAD_VERSION}.cmake")
-# set(MACOSX_BUNDLE TRUE) set(CMAKE_BUILD_TYPE Debug)
-#
-# if(NOT EXISTS ${CPM_DOWNLOAD_LOCATION}) message(STATUS "Downloading CPM.cmake
-# to ${CPM_DOWNLOAD_LOCATION}") file( DOWNLOAD
-# https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake
-# ${CPM_DOWNLOAD_LOCATION}) endif()
-#
-# include(${CPM_DOWNLOAD_LOCATION})
 
-# Bring in JUCE locally cpmaddpackage(NAME juce GIT_REPOSITORY
-# https://github.com/juce-framework/JUCE.git GIT_TAG origin/master)
 
-# Make sure you include any new source files here
-set(SOURCE_FILES Source/PluginEditor.cpp Source/PluginEditor.h
-                 Source/PluginProcessor.cpp Source/PluginProcessor.h)
+set(SOURCE_FILES Source/ChordDetector.cpp Source/ChordDetector.h
+                 Source/ChordyKeyboardComponent.cpp Source/ChordyKeyboardComponent.h
+                 Source/PluginEditor.cpp Source/PluginEditor.h
+                 Source/PluginProcessor.cpp Source/PluginProcessor.h
+                 Source/PracticePanel.cpp Source/PracticePanel.h
+                 Source/SpacedRepetition.cpp Source/SpacedRepetition.h
+                 Source/VoicingLibraryPanel.cpp Source/VoicingLibraryPanel.h
+                 Source/VoicingModel.cpp Source/VoicingModel.h)
 
 # Change these to your own preferences
 juce_add_plugin(
@@ -45,7 +38,7 @@ juce_add_plugin(
   IS_MIDI_EFFECT
   FALSE
   EDITOR_WANTS_KEYBOARD_FOCUS
-  FALSE
+  TRUE
   JUCE_VST3_CAN_REPLACE_VST2
   FALSE
   COPY_PLUGIN_AFTER_BUILD
@@ -53,13 +46,13 @@ juce_add_plugin(
   PLUGIN_MANUFACTURER_CODE
   Tap1
   PLUGIN_CODE
-  Reg0
+  Chrd
   FORMATS
   VST3
   AU
   Standalone
   PRODUCT_NAME
-  "Template")
+  "${PROJECT_NAME}")
 
 # How we want our SourceFiles to appear in our IDE
 source_group(TREE ${CMAKE_CURRENT_SOURCE_DIR} FILES ${SOURCE_FILES})

@@ -1,6 +1,10 @@
 #pragma once
 
 #include <juce_audio_processors/juce_audio_processors.h>
+#include "VoicingModel.h"
+#include "SpacedRepetition.h"
+#include <atomic>
+#include <mutex>
 
 //==============================================================================
 class AudioPluginAudioProcessor final : public juce::AudioProcessor {
@@ -41,7 +45,33 @@ public:
   void getStateInformation(juce::MemoryBlock &destData) override;
   void setStateInformation(const void *data, int sizeInBytes) override;
 
+  //==============================================================================
+  // MIDI keyboard state — bridges audio thread and GUI thread
+  juce::MidiKeyboardState keyboardState;
+
+  // Lock-free active notes bitfield for GUI thread reads
+  std::atomic<uint64_t> activeNotesLow{0};  // notes 0-63
+  std::atomic<uint64_t> activeNotesHigh{0}; // notes 64-127
+
+  // Convenience: read active notes as a vector (call from GUI thread)
+  std::vector<int> getActiveNotes() const;
+
+  // Last-played notes: persists after key release so Record can capture them
+  std::vector<int> getLastPlayedNotes() const;
+
+  // APVTS for automatable parameters
+  juce::AudioProcessorValueTreeState apvts;
+
+  // Voicing library and spaced repetition state
+  VoicingLibrary voicingLibrary;
+  SpacedRepetitionEngine spacedRepetition;
+
 private:
+  mutable std::mutex lastPlayedNotesMutex;
+  std::vector<int> lastPlayedNotes;
+
+  static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
   //==============================================================================
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessor)
 };

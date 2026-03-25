@@ -2,6 +2,19 @@
 #include "PluginEditor.h"
 
 //==============================================================================
+juce::AudioProcessorValueTreeState::ParameterLayout
+AudioPluginAudioProcessor::createParameterLayout() {
+  juce::AudioProcessorValueTreeState::ParameterLayout layout;
+
+  layout.add(std::make_unique<juce::AudioParameterBool>(
+      juce::ParameterID{"practiceMode", 1}, "Practice Mode", false));
+
+  layout.add(std::make_unique<juce::AudioParameterInt>(
+      juce::ParameterID{"midiChannel", 1}, "MIDI Channel", 1, 16, 1));
+
+  return layout;
+}
+
 AudioPluginAudioProcessor::AudioPluginAudioProcessor()
     : AudioProcessor(
           BusesProperties()
@@ -11,7 +24,8 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
 #endif
               .withOutput("Output", juce::AudioChannelSet::stereo(), true)
 #endif
-      ) {
+              ),
+      apvts(*this, nullptr, "CHORDY_STATE", createParameterLayout()) {
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor() {}
@@ -48,9 +62,7 @@ bool AudioPluginAudioProcessor::isMidiEffect() const {
 double AudioPluginAudioProcessor::getTailLengthSeconds() const { return 0.0; }
 
 int AudioPluginAudioProcessor::getNumPrograms() {
-  return 1; // NB: some hosts don't cope very well if you tell them there are 0
-            // programs, so this should be at least 1, even if you're not really
-            // implementing programs.
+  return 1;
 }
 
 int AudioPluginAudioProcessor::getCurrentProgram() { return 0; }
@@ -72,15 +84,10 @@ void AudioPluginAudioProcessor::changeProgramName(int index,
 //==============================================================================
 void AudioPluginAudioProcessor::prepareToPlay(double sampleRate,
                                               int samplesPerBlock) {
-  // Use this method as the place to do any pre-playback
-  // initialisation that you need..
   juce::ignoreUnused(sampleRate, samplesPerBlock);
 }
 
-void AudioPluginAudioProcessor::releaseResources() {
-  // When playback stops, you can use this as an opportunity to free up any
-  // spare memory, etc.
-}
+void AudioPluginAudioProcessor::releaseResources() {}
 
 bool AudioPluginAudioProcessor::isBusesLayoutSupported(
     const BusesLayout &layouts) const {
@@ -88,15 +95,10 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(
   juce::ignoreUnused(layouts);
   return true;
 #else
-  // This is the place where you check if the layout is supported.
-  // In this template code we only support mono or stereo.
-  // Some plugin hosts, such as certain GarageBand versions, will only
-  // load plugins that support stereo bus layouts.
   if (layouts.getMainOutputChannelSet() != juce::AudioChannelSet::mono() &&
       layouts.getMainOutputChannelSet() != juce::AudioChannelSet::stereo())
     return false;
 
-  // This checks if the input layout matches the output layout
 #if !JucePlugin_IsSynth
   if (layouts.getMainOutputChannelSet() != layouts.getMainInputChannelSet())
     return false;
@@ -108,38 +110,68 @@ bool AudioPluginAudioProcessor::isBusesLayoutSupported(
 
 void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
                                              juce::MidiBuffer &midiMessages) {
-  juce::ignoreUnused(midiMessages);
-
   juce::ScopedNoDenormals noDenormals;
   auto totalNumInputChannels = getTotalNumInputChannels();
   auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-  // In case we have more outputs than inputs, this code clears any output
-  // channels that didn't contain input data, (because these aren't
-  // guaranteed to be empty - they may contain garbage).
-  // This is here to avoid people getting screaming feedback
-  // when they first compile a plugin, but obviously you don't need to keep
-  // this code if your algorithm always overwrites all the output channels.
   for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
     buffer.clear(i, 0, buffer.getNumSamples());
 
-  // This is the place where you'd normally do the guts of your plugin's
-  // audio processing...
-  // Make sure to reset the state if your inner loop is processing
-  // the samples and the outer loop is handling the channels.
-  // Alternatively, you can process the samples with the channels
-  // interleaved by keeping the same state.
-  for (int channel = 0; channel < totalNumInputChannels; ++channel) {
-    auto *channelData = buffer.getWritePointer(channel);
-    juce::ignoreUnused(channelData);
-    // ..do something to the data...
+  // Feed MIDI into keyboard state (bridges audio thread → GUI thread).
+  // injectIndirectEvents=true allows on-screen keyboard clicks to generate MIDI output.
+  keyboardState.processNextMidiBuffer(midiMessages, 0, buffer.getNumSamples(),
+                                      true);
+
+  // Update atomic note bitfield for lock-free GUI reads
+  int channel = static_cast<int>(*apvts.getRawParameterValue("midiChannel"));
+  uint64_t low = 0, high = 0;
+  for (int note = 0; note < 128; ++note) {
+    if (keyboardState.isNoteOn(channel, note)) {
+      if (note < 64)
+        low |= (uint64_t(1) << note);
+      else
+        high |= (uint64_t(1) << (note - 64));
+    }
+  }
+  activeNotesLow.store(low, std::memory_order_relaxed);
+  activeNotesHigh.store(high, std::memory_order_relaxed);
+
+  // Persist last-played notes (only overwrite when notes are actually held)
+  if (low != 0 || high != 0) {
+    std::lock_guard<std::mutex> guard(lastPlayedNotesMutex);
+    lastPlayedNotes.clear();
+    for (int i = 0; i < 64; ++i)
+      if (low & (uint64_t(1) << i))
+        lastPlayedNotes.push_back(i);
+    for (int i = 0; i < 64; ++i)
+      if (high & (uint64_t(1) << i))
+        lastPlayedNotes.push_back(i + 64);
   }
 }
 
-//==============================================================================
-bool AudioPluginAudioProcessor::hasEditor() const {
-  return true; // (change this to false if you choose to not supply an editor)
+std::vector<int> AudioPluginAudioProcessor::getActiveNotes() const {
+  std::vector<int> notes;
+  uint64_t low = activeNotesLow.load(std::memory_order_relaxed);
+  uint64_t high = activeNotesHigh.load(std::memory_order_relaxed);
+
+  for (int i = 0; i < 64; ++i)
+    if (low & (uint64_t(1) << i))
+      notes.push_back(i);
+
+  for (int i = 0; i < 64; ++i)
+    if (high & (uint64_t(1) << i))
+      notes.push_back(i + 64);
+
+  return notes;
 }
+
+std::vector<int> AudioPluginAudioProcessor::getLastPlayedNotes() const {
+  std::lock_guard<std::mutex> guard(lastPlayedNotesMutex);
+  return lastPlayedNotes;
+}
+
+//==============================================================================
+bool AudioPluginAudioProcessor::hasEditor() const { return true; }
 
 juce::AudioProcessorEditor *AudioPluginAudioProcessor::createEditor() {
   return new AudioPluginAudioProcessorEditor(*this);
@@ -148,22 +180,38 @@ juce::AudioProcessorEditor *AudioPluginAudioProcessor::createEditor() {
 //==============================================================================
 void AudioPluginAudioProcessor::getStateInformation(
     juce::MemoryBlock &destData) {
-  // You should use this method to store your parameters in the memory block.
-  // You could do that either as raw data, or use the XML or ValueTree classes
-  // as intermediaries to make it easy to save and load complex data.
-  juce::ignoreUnused(destData);
+  auto state = apvts.copyState();
+
+  // Append voicing library and SR state as children
+  state.removeChild(state.getChildWithName("VoicingLibrary"), nullptr);
+  state.removeChild(state.getChildWithName("SpacedRepetition"), nullptr);
+  state.appendChild(voicingLibrary.toValueTree(), nullptr);
+  state.appendChild(spacedRepetition.toValueTree(), nullptr);
+
+  std::unique_ptr<juce::XmlElement> xml(state.createXml());
+  copyXmlToBinary(*xml, destData);
 }
 
 void AudioPluginAudioProcessor::setStateInformation(const void *data,
                                                     int sizeInBytes) {
-  // You should use this method to restore your parameters from this memory
-  // block, whose contents will have been created by the getStateInformation()
-  // call.
-  juce::ignoreUnused(data, sizeInBytes);
+  std::unique_ptr<juce::XmlElement> xml(getXmlFromBinary(data, sizeInBytes));
+  if (xml != nullptr && xml->hasTagName(apvts.state.getType())) {
+    auto state = juce::ValueTree::fromXml(*xml);
+
+    // Restore voicing library and SR state from children
+    auto vlTree = state.getChildWithName("VoicingLibrary");
+    if (vlTree.isValid())
+      voicingLibrary.fromValueTree(vlTree);
+
+    auto srTree = state.getChildWithName("SpacedRepetition");
+    if (srTree.isValid())
+      spacedRepetition.fromValueTree(srTree);
+
+    apvts.replaceState(state);
+  }
 }
 
 //==============================================================================
-// This creates new instances of the plugin..
 juce::AudioProcessor *JUCE_CALLTYPE createPluginFilter() {
   return new AudioPluginAudioProcessor();
 }
