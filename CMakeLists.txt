@@ -18,6 +18,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(SOURCE_FILES Source/BeatIndicatorComponent.cpp Source/BeatIndicatorComponent.h
                  Source/ChordDetector.cpp Source/ChordDetector.h
                  Source/ChordyKeyboardComponent.cpp Source/ChordyKeyboardComponent.h
+                 Source/ChordyLookAndFeel.cpp Source/ChordyLookAndFeel.h
                  Source/PluginEditor.cpp Source/PluginEditor.h
                  Source/PluginProcessor.cpp Source/PluginProcessor.h
                  Source/PracticePanel.cpp Source/PracticePanel.h

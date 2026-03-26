@@ -1,6 +1,7 @@
 #pragma once
 
 #include "PluginProcessor.h"
+#include "ChordyLookAndFeel.h"
 #include "ChordyKeyboardComponent.h"
 #include "VoicingLibraryPanel.h"
 #include "PracticePanel.h"
@@ -24,6 +25,7 @@ public:
 private:
   void timerCallback() override;
 
+  ChordyLookAndFeel chordyLookAndFeel;
   AudioPluginAudioProcessor &processorRef;
 
   // Header

@@ -1,6 +1,7 @@
 #include "VoicingLibraryPanel.h"
 #include "PluginProcessor.h"
 #include "ChordDetector.h"
+#include "ChordyTheme.h"
 
 static void addQualityItems (juce::ComboBox& combo)
 {
@@ -72,12 +73,12 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     // --- Normal mode ---
     headerLabel.setText ("VOICING LIBRARY", juce::dontSendNotification);
     headerLabel.setFont (juce::FontOptions (16.0f, juce::Font::bold));
-    headerLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    headerLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
     addAndMakeVisible (headerLabel);
 
     recordingIndicator.setText ("REC", juce::dontSendNotification);
     recordingIndicator.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-    recordingIndicator.setColour (juce::Label::textColourId, juce::Colour (0xFFFF3333));
+    recordingIndicator.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::danger));
     recordingIndicator.setJustificationType (juce::Justification::centredRight);
     recordingIndicator.setVisible (false);
     addAndMakeVisible (recordingIndicator);
@@ -95,8 +96,7 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     addAndMakeVisible (qualityFilter);
 
     voicingList.setModel (this);
-    voicingList.setColour (juce::ListBox::backgroundColourId, juce::Colour (0xFF2A2A3E));
-    voicingList.setColour (juce::ListBox::outlineColourId, juce::Colour (0xFF444466));
+    // List colors inherited from LookAndFeel
     voicingList.setOutlineThickness (1);
     addAndMakeVisible (voicingList);
 
@@ -110,20 +110,20 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
 
     // --- Confirmation mode ---
     auto labelStyle = [](juce::Label& l) {
-        l.setFont (juce::FontOptions (13.0f));
-        l.setColour (juce::Label::textColourId, juce::Colour (0xFFAABBCC));
+        l.setFont (juce::FontOptions (ChordyTheme::fontBody));
+        l.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textSecondary));
     };
 
     confirmHeader.setText ("CONFIRM VOICING", juce::dontSendNotification);
     confirmHeader.setFont (juce::FontOptions (16.0f, juce::Font::bold));
-    confirmHeader.setColour (juce::Label::textColourId, juce::Colours::white);
+    confirmHeader.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
     addChildComponent (confirmHeader);
 
     confirmNameLabel.setText ("Name:", juce::dontSendNotification);
     labelStyle (confirmNameLabel);
     addChildComponent (confirmNameLabel);
 
-    confirmNameEditor.setTextToShowWhenEmpty ("Voicing name...", juce::Colours::grey);
+    confirmNameEditor.setTextToShowWhenEmpty ("Voicing name...", juce::Colour (ChordyTheme::textTertiary));
     addChildComponent (confirmNameEditor);
 
     confirmRootLabel.setText ("Root:", juce::dontSendNotification);
@@ -145,7 +145,7 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     labelStyle (confirmAltLabel);
     addChildComponent (confirmAltLabel);
 
-    confirmAltEditor.setTextToShowWhenEmpty ("#9#11b5 etc. (optional)", juce::Colours::grey);
+    confirmAltEditor.setTextToShowWhenEmpty ("#9#11b5 etc. (optional)", juce::Colour (ChordyTheme::textTertiary));
     addChildComponent (confirmAltEditor);
 
     confirmSaveButton.onClick = [this] { onConfirmSave(); };
@@ -159,18 +159,18 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
 
 void VoicingLibraryPanel::paint (juce::Graphics& g)
 {
-    g.setColour (juce::Colour (0xFF222244));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
+    g.setColour (juce::Colour (ChordyTheme::bgSurface));
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), ChordyTheme::cornerRadius);
 
     if (recordState == RecordState::Waiting || recordState == RecordState::Capturing)
     {
-        g.setColour (juce::Colour (0xFFFF3333));
-        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f, 2.0f);
+        g.setColour (juce::Colour (ChordyTheme::danger));
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), ChordyTheme::cornerRadius, 2.0f);
     }
     else if (recordState == RecordState::Confirming)
     {
-        g.setColour (juce::Colour (0xFF4488CC));
-        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), 6.0f, 2.0f);
+        g.setColour (juce::Colour (ChordyTheme::accent));
+        g.drawRoundedRectangle (getLocalBounds().toFloat().reduced (1.0f), ChordyTheme::cornerRadius, 2.0f);
     }
 }
 
@@ -200,7 +200,7 @@ void VoicingLibraryPanel::setConfirmModeVisible (bool visible)
 
 void VoicingLibraryPanel::resized()
 {
-    auto area = getLocalBounds().reduced (8);
+    auto area = getLocalBounds().reduced (ChordyTheme::panelPadding);
 
     if (recordState == RecordState::Confirming)
         layoutConfirmMode (area);
@@ -381,7 +381,7 @@ void VoicingLibraryPanel::onRecordToggle()
     recordState = RecordState::Waiting;
     capturedNotes.clear();
     recordButton.setButtonText ("Cancel");
-    recordButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xFF882222));
+    recordButton.setColour (juce::TextButton::buttonColourId, juce::Colour (ChordyTheme::dangerMuted));
     recordingIndicator.setText ("REC - Play a chord...", juce::dontSendNotification);
     recordingIndicator.setVisible (true);
     repaint();
@@ -508,17 +508,17 @@ void VoicingLibraryPanel::paintListBoxItem (int rowNumber, juce::Graphics& g,
     const auto& v = displayedVoicings[static_cast<size_t> (rowNumber)];
 
     if (rowIsSelected)
-        g.fillAll (juce::Colour (0xFF3A3A5E));
+        g.fillAll (juce::Colour (ChordyTheme::bgSelected));
     else
-        g.fillAll (juce::Colour (0xFF2A2A3E));
+        g.fillAll (juce::Colour (ChordyTheme::bgSurface));
 
-    g.setColour (juce::Colours::white);
-    g.setFont (14.0f);
+    g.setColour (juce::Colour (ChordyTheme::textPrimary));
+    g.setFont (ChordyTheme::fontBody);
     g.drawText (v.name, 8, 0, width - 80, height, juce::Justification::centredLeft);
 
     // Show quality + alterations badge
-    g.setColour (juce::Colour (0xFF88AACC));
-    g.setFont (11.0f);
+    g.setColour (juce::Colour (ChordyTheme::textSecondary));
+    g.setFont (ChordyTheme::fontSmall);
     g.drawText (v.getQualityLabel(),
                 width - 70, 0, 62, height, juce::Justification::centredRight);
 }

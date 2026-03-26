@@ -1,5 +1,6 @@
 #include "PluginEditor.h"
 #include "ChordDetector.h"
+#include "ChordyTheme.h"
 
 //==============================================================================
 AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
@@ -10,21 +11,23 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
       voicingLibraryPanel(p),
       practicePanel(p, keyboard) {
 
+  setLookAndFeel(&chordyLookAndFeel);
+
   // Title
   titleLabel.setText("CHORDY", juce::dontSendNotification);
   titleLabel.setFont(juce::FontOptions(24.0f, juce::Font::bold));
-  titleLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+  titleLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textPrimary));
   addAndMakeVisible(titleLabel);
 
   // Chord display
   chordDisplayLabel.setText("Play something...", juce::dontSendNotification);
   chordDisplayLabel.setFont(juce::FontOptions(36.0f, juce::Font::bold));
-  chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+  chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textPrimary));
   chordDisplayLabel.setJustificationType(juce::Justification::centred);
   addAndMakeVisible(chordDisplayLabel);
 
   nextRootLabel.setFont(juce::FontOptions(16.0f));
-  nextRootLabel.setColour(juce::Label::textColourId, juce::Colour(0xFF889999));
+  nextRootLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textTertiary));
   nextRootLabel.setJustificationType(juce::Justification::centred);
   addAndMakeVisible(nextRootLabel);
 
@@ -61,9 +64,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
     }
   };
   // Tabbed library panel
-  libraryTabs.addTab("Voicings", juce::Colour(0xFF222244), &voicingLibraryPanel, false);
-  libraryTabs.addTab("Progressions", juce::Colour(0xFF222244), &progressionsPanel, false);
-  libraryTabs.addTab("Melodies", juce::Colour(0xFF222244), &melodiesPanel, false);
+  libraryTabs.addTab("Voicings", juce::Colour(ChordyTheme::bgSurface), &voicingLibraryPanel, false);
+  libraryTabs.addTab("Progressions", juce::Colour(ChordyTheme::bgSurface), &progressionsPanel, false);
+  libraryTabs.addTab("Melodies", juce::Colour(ChordyTheme::bgSurface), &melodiesPanel, false);
   libraryTabs.setTabBarDepth(28);
   libraryTabs.setOutline(0);
   addAndMakeVisible(libraryTabs);
@@ -74,24 +77,22 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   // Tempo bar
   bpmLabel.setText("BPM:", juce::dontSendNotification);
   bpmLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
-  bpmLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFAABBCC));
+  bpmLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textSecondary));
   addAndMakeVisible(bpmLabel);
 
   bpmSlider.setSliderStyle(juce::Slider::LinearHorizontal);
   bpmSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 45, 24);
-  bpmSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xFFAABBCC));
+  bpmSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(ChordyTheme::textSecondary));
   addAndMakeVisible(bpmSlider);
   bpmAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
       processorRef.apvts, "bpm", bpmSlider);
 
-  metronomeToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFFAABBCC));
-  metronomeToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFF44CC88));
+  // Toggle colors inherited from LookAndFeel
   addAndMakeVisible(metronomeToggle);
   metronomeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
       processorRef.apvts, "metronomeOn", metronomeToggle);
 
-  hostSyncToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFFAABBCC));
-  hostSyncToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFF44CC88));
+  // Toggle colors inherited from LookAndFeel
   addAndMakeVisible(hostSyncToggle);
   hostSyncAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
       processorRef.apvts, "useHostSync", hostSyncToggle);
@@ -103,12 +104,27 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor() {
+  setLookAndFeel(nullptr);
   stopTimer();
 }
 
 //==============================================================================
 void AudioPluginAudioProcessorEditor::paint(juce::Graphics &g) {
-  g.fillAll(juce::Colour(0xFF1A1A2E));
+  g.fillAll(juce::Colour(ChordyTheme::bgDeepest));
+
+  // Section separator lines
+  auto separatorColour = juce::Colour(ChordyTheme::border).withAlpha(0.5f);
+  g.setColour(separatorColour);
+
+  int headerBottom = 40;
+  int chordBottom = headerBottom + 80;
+  int keyboardBottom = chordBottom + 140;
+  int tempoBottom = keyboardBottom + 36;
+
+  g.drawHorizontalLine(headerBottom, 0.0f, (float)getWidth());
+  g.drawHorizontalLine(chordBottom, 0.0f, (float)getWidth());
+  g.drawHorizontalLine(keyboardBottom, 0.0f, (float)getWidth());
+  g.drawHorizontalLine(tempoBottom, 0.0f, (float)getWidth());
 }
 
 void AudioPluginAudioProcessorEditor::resized() {
@@ -126,23 +142,23 @@ void AudioPluginAudioProcessorEditor::resized() {
 
   // Keyboard
   auto keyboardArea = area.removeFromTop(140);
-  keyboard.setBounds(keyboardArea.reduced(8));
+  keyboard.setBounds(keyboardArea.reduced(4));
 
   // Tempo bar
   auto tempoArea = area.removeFromTop(36).reduced(8, 2);
   bpmLabel.setBounds(tempoArea.removeFromLeft(36));
   bpmSlider.setBounds(tempoArea.removeFromLeft(140));
   tempoArea.removeFromLeft(8);
-  metronomeToggle.setBounds(tempoArea.removeFromLeft(65));
+  metronomeToggle.setBounds(tempoArea.removeFromLeft(80));
   tempoArea.removeFromLeft(4);
-  hostSyncToggle.setBounds(tempoArea.removeFromLeft(60));
+  hostSyncToggle.setBounds(tempoArea.removeFromLeft(75));
   tempoArea.removeFromLeft(8);
   beatIndicator.setBounds(tempoArea);
 
   // Bottom panels: library on left, practice on right
-  auto bottomArea = area.reduced(8);
-  auto libraryArea = bottomArea.removeFromLeft(getWidth() / 2 - 12);
-  bottomArea.removeFromLeft(8);
+  auto bottomArea = area.reduced(10);
+  auto libraryArea = bottomArea.removeFromLeft(getWidth() / 2 - 14);
+  bottomArea.removeFromLeft(10);
   libraryTabs.setBounds(libraryArea);
   practicePanel.setBounds(bottomArea);
 }
@@ -170,7 +186,7 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
     chordDisplayLabel.setFont(juce::FontOptions(36.0f, juce::Font::bold));
     nextRootLabel.setVisible(false);
     // Normal chord display — use last-played notes when keys are released
-    chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colours::white);
+    chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textPrimary));
     auto displayNotes = notes.empty() ? processorRef.getLastPlayedNotes() : notes;
 
     if (displayNotes.empty()) {

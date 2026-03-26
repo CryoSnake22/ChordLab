@@ -1,6 +1,7 @@
 #include "PracticePanel.h"
 #include "PluginProcessor.h"
 #include "ChordyKeyboardComponent.h"
+#include "ChordyTheme.h"
 #include <algorithm>
 #include <set>
 
@@ -10,22 +11,22 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
 {
     headerLabel.setText ("PRACTICE", juce::dontSendNotification);
     headerLabel.setFont (juce::FontOptions (16.0f, juce::Font::bold));
-    headerLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    headerLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
     addAndMakeVisible (headerLabel);
 
     targetLabel.setText ("Select a voicing and press Start", juce::dontSendNotification);
     targetLabel.setFont (juce::FontOptions (20.0f, juce::Font::bold));
-    targetLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
     targetLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (targetLabel);
 
     feedbackLabel.setFont (juce::FontOptions (14.0f));
-    feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFAABBCC));
+    feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textSecondary));
     feedbackLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (feedbackLabel);
 
     statsLabel.setFont (juce::FontOptions (13.0f));
-    statsLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF889999));
+    statsLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textTertiary));
     statsLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (statsLabel);
 
@@ -43,8 +44,7 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
     customButton.onClick = [this] { onCustomToggle(); };
     addAndMakeVisible (customButton);
 
-    timedToggle.setColour (juce::ToggleButton::textColourId, juce::Colour (0xFFAABBCC));
-    timedToggle.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xFF44CC88));
+    // Toggle colors inherited from LookAndFeel
     addAndMakeVisible (timedToggle);
 
     // Key selector toggles (hidden by default)
@@ -54,8 +54,7 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
     {
         keyToggles[i].setButtonText (noteNames[i]);
         keyToggles[i].setToggleState (true, juce::dontSendNotification);
-        keyToggles[i].setColour (juce::ToggleButton::textColourId, juce::Colour (0xFFAABBCC));
-        keyToggles[i].setColour (juce::ToggleButton::tickColourId, juce::Colour (0xFF44CC88));
+        // Toggle colors inherited from LookAndFeel
         addChildComponent (keyToggles[i]);
     }
 
@@ -77,7 +76,7 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
     addChildComponent (orderCombo);
 
     timingFeedbackLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
-    timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF889999));
+    timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textTertiary));
     timingFeedbackLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (timingFeedbackLabel);
 
@@ -86,13 +85,13 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
 
 void PracticePanel::paint (juce::Graphics& g)
 {
-    g.setColour (juce::Colour (0xFF222244));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), 6.0f);
+    g.setColour (juce::Colour (ChordyTheme::bgSurface));
+    g.fillRoundedRectangle (getLocalBounds().toFloat(), ChordyTheme::cornerRadius);
 }
 
 void PracticePanel::resized()
 {
-    auto area = getLocalBounds().reduced (8);
+    auto area = getLocalBounds().reduced (ChordyTheme::panelPadding);
 
     headerLabel.setBounds (area.removeFromTop (24));
     area.removeFromTop (8);
@@ -199,7 +198,7 @@ void PracticePanel::startPractice (const juce::String& voicingId)
 
     // Update button state
     startButton.setButtonText ("Stop");
-    startButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xFF882222));
+    startButton.setColour (juce::TextButton::buttonColourId, juce::Colour (ChordyTheme::dangerMuted));
     nextButton.setEnabled (true);
     playButton.setEnabled (true);
 
@@ -247,7 +246,7 @@ void PracticePanel::startPractice (const juce::String& voicingId)
         timingFeedbackLabel.setText ("", juce::dontSendNotification);
         currentRootText = "";
         nextRootText = "";
-        currentRootColour = juce::Colours::white;
+        currentRootColour = juce::Colour (ChordyTheme::textPrimary);
 
         keyboardRef.clearAllColours();
         keyboardRef.repaint();
@@ -258,14 +257,14 @@ void PracticePanel::startPractice (const juce::String& voicingId)
         timedPhase = TimedPhase::Inactive;
         juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
         targetLabel.setText ("Play: " + keyName, juce::dontSendNotification);
-        targetLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
         feedbackLabel.setText ("", juce::dontSendNotification);
         timingFeedbackLabel.setText ("", juce::dontSendNotification);
 
         // Show root in grey on main display
         currentRootText = keyName;
         nextRootText = "";
-        currentRootColour = juce::Colour (0xFF889999);
+        currentRootColour = juce::Colour (ChordyTheme::textTertiary);
 
         // Show target notes on keyboard
         keyboardRef.clearAllColours();
@@ -285,11 +284,11 @@ void PracticePanel::stopPractice()
 
     headerLabel.setText ("PRACTICE", juce::dontSendNotification);
     targetLabel.setText ("Select a voicing and press Start", juce::dontSendNotification);
-    targetLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+    targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
     feedbackLabel.setText ("", juce::dontSendNotification);
     currentRootText = {};
     nextRootText = {};
-    currentRootColour = juce::Colours::white;
+    currentRootColour = juce::Colour (ChordyTheme::textPrimary);
     timingFeedbackLabel.setText ("", juce::dontSendNotification);
 
     startButton.setButtonText ("Start");
@@ -358,10 +357,10 @@ void PracticePanel::updateUntimedPractice (const std::vector<int>& activeNotes)
         processorRef.spacedRepetition.recordSuccess (
             currentChallenge.voicingId, currentChallenge.keyIndex);
         feedbackLabel.setText ("Correct!", juce::dontSendNotification);
-        feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00CC44));
+        feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
 
         // Flash green on main display
-        currentRootColour = juce::Colour (0xFF00FF66);
+        currentRootColour = juce::Colour (ChordyTheme::successBright);
 
         updateStats();
     }
@@ -394,11 +393,11 @@ void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
             {
                 juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
                 targetLabel.setText ("Next: " + keyName, juce::dontSendNotification);
-                targetLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+                targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
 
                 // Show on main display as "up next"
                 currentRootText = keyName;
-                currentRootColour = juce::Colours::white;
+                currentRootColour = juce::Colour (ChordyTheme::textPrimary);
                 nextRootText = "";
             }
 
@@ -466,16 +465,16 @@ void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
                 juce::Colour qualityColour;
                 switch (quality)
                 {
-                    case 5:  qualityText = "Perfect!";  qualityColour = juce::Colour (0xFF00CC44); break;
-                    case 4:  qualityText = "Good";      qualityColour = juce::Colour (0xFF44CC88); break;
-                    case 3:  qualityText = "OK";        qualityColour = juce::Colour (0xFFCCCC00); break;
-                    case 2:  qualityText = "Slow";      qualityColour = juce::Colour (0xFFCC8800); break;
-                    case 1:  qualityText = "Corrected"; qualityColour = juce::Colour (0xFFCC4400); break;
-                    default: qualityText = "Timeout";   qualityColour = juce::Colour (0xFFCC2200); break;
+                    case 5:  qualityText = "Perfect!";  qualityColour = juce::Colour (ChordyTheme::qualityPerfect); break;
+                    case 4:  qualityText = "Good";      qualityColour = juce::Colour (ChordyTheme::qualityGood); break;
+                    case 3:  qualityText = "OK";        qualityColour = juce::Colour (ChordyTheme::qualityOk); break;
+                    case 2:  qualityText = "Slow";      qualityColour = juce::Colour (ChordyTheme::qualitySlow); break;
+                    case 1:  qualityText = "Corrected"; qualityColour = juce::Colour (ChordyTheme::qualityCorrected); break;
+                    default: qualityText = "Timeout";   qualityColour = juce::Colour (ChordyTheme::qualityTimeout); break;
                 }
 
                 feedbackLabel.setText ("Correct!", juce::dontSendNotification);
-                feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00CC44));
+                feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
                 timingFeedbackLabel.setText (
                     juce::String (beatFraction, 1) + " beats - " + qualityText,
                     juce::dontSendNotification);
@@ -514,9 +513,9 @@ void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
                 playPhaseScored = true;
 
                 feedbackLabel.setText ("Correct!", juce::dontSendNotification);
-                feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00CC44));
+                feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
                 timingFeedbackLabel.setText ("Early - Perfect!", juce::dontSendNotification);
-                timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00CC44));
+                timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
                 updateStats();
 
                 updateKeyboardColours (activeNotes);
@@ -534,10 +533,10 @@ void PracticePanel::enterPlayPhase()
     // Show root in urgent color
     juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
     targetLabel.setText (keyName, juce::dontSendNotification);
-    targetLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00FF66));
+    targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::successBright));
 
     currentRootText = keyName;
-    currentRootColour = juce::Colour (0xFF00FF66);
+    currentRootColour = juce::Colour (ChordyTheme::successBright);
 
     // Pre-fetch next challenge so we can show "Up next..." immediately
     if (customMode)
@@ -548,7 +547,7 @@ void PracticePanel::enterPlayPhase()
     nextRootText = ChordDetector::noteNameFromPitchClass (nextChallenge.keyIndex);
 
     feedbackLabel.setText ("GO!", juce::dontSendNotification);
-    feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00FF66));
+    feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::successBright));
     timingFeedbackLabel.setText ("", juce::dontSendNotification);
 
     // Show target notes
@@ -569,9 +568,9 @@ void PracticePanel::enterPrepPhase()
             currentChallenge.voicingId, currentChallenge.keyIndex, 0);
         lastQualityScore = 0;
         feedbackLabel.setText ("Timeout!", juce::dontSendNotification);
-        feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFCC2200));
+        feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::danger));
         timingFeedbackLabel.setText ("Q0 - Too slow", juce::dontSendNotification);
-        timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFCC2200));
+        timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::danger));
         updateStats();
     }
 
@@ -590,11 +589,11 @@ void PracticePanel::enterPrepPhase()
     // Show upcoming root dimmed as the main display (prep = getting ready)
     juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
     targetLabel.setText ("Up next: " + keyName, juce::dontSendNotification);
-    targetLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF889999));
+    targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textTertiary));
 
     // Main display: upcoming root dimmed, no "up next" subtitle (it IS the main one now)
     currentRootText = keyName;
-    currentRootColour = juce::Colour (0xFF889999);
+    currentRootColour = juce::Colour (ChordyTheme::textTertiary);
     nextRootText = "";
 
     // Clear keyboard
@@ -641,13 +640,13 @@ void PracticePanel::loadNextChallenge()
     {
         juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
         targetLabel.setText ("Play: " + keyName, juce::dontSendNotification);
-        targetLabel.setColour (juce::Label::textColourId, juce::Colours::white);
+        targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
         feedbackLabel.setText ("", juce::dontSendNotification);
 
         // Show root in grey on main display
         currentRootText = keyName;
         nextRootText = "";
-        currentRootColour = juce::Colour (0xFF889999);
+        currentRootColour = juce::Colour (ChordyTheme::textTertiary);
 
         keyboardRef.clearAllColours();
         for (int note : targetNotes)
@@ -731,7 +730,7 @@ void PracticePanel::onNext()
         {
             processorRef.spacedRepetition.recordFailure (
                 currentChallenge.voicingId, currentChallenge.keyIndex);
-            feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFCC2200));
+            feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::danger));
             updateStats();
         }
         loadNextChallenge();
@@ -753,7 +752,7 @@ void PracticePanel::onCustomToggle()
 
     customMode = showingKeySelector;
     customButton.setColour (juce::TextButton::buttonColourId,
-        showingKeySelector ? juce::Colour (0xFF446688)
+        showingKeySelector ? juce::Colour (ChordyTheme::accentMuted)
                            : getLookAndFeel().findColour (juce::TextButton::buttonColourId));
 
     resized();

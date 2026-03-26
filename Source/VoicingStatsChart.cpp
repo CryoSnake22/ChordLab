@@ -1,5 +1,6 @@
 #include "VoicingStatsChart.h"
 #include "ChordDetector.h"
+#include "ChordyTheme.h"
 
 void VoicingStatsChart::setStats (
     const std::array<SpacedRepetitionEngine::KeyStats, 12>& stats)
@@ -49,13 +50,13 @@ void VoicingStatsChart::paint (juce::Graphics& g)
         if (acc < 0.0)
         {
             // No data — thin grey outline
-            g.setColour (juce::Colour (0xFF445566));
+            g.setColour (juce::Colour (ChordyTheme::border));
             g.drawRect (barArea.reduced (0.5f), 1.0f);
         }
         else
         {
             // Background outline
-            g.setColour (juce::Colour (0xFF333355));
+            g.setColour (juce::Colour (ChordyTheme::bgElevated));
             g.fillRect (barArea);
 
             // Filled bar proportional to accuracy
@@ -66,19 +67,19 @@ void VoicingStatsChart::paint (juce::Graphics& g)
             // Color: red → yellow → green based on accuracy
             juce::Colour barColour;
             if (acc >= 0.8)
-                barColour = juce::Colour (0xFF00CC44); // green
+                barColour = juce::Colour (ChordyTheme::success);
             else if (acc >= 0.5)
-                barColour = juce::Colour (0xFFCCCC00); // yellow
+                barColour = juce::Colour (ChordyTheme::warning);
             else
-                barColour = juce::Colour (0xFFCC4400); // red
+                barColour = juce::Colour (ChordyTheme::danger);
 
             g.setColour (barColour);
             g.fillRect (fillArea);
         }
 
         // Root label
-        g.setColour (juce::Colour (0xFF99AABB));
-        g.setFont (juce::FontOptions (10.0f));
+        g.setColour (juce::Colour (ChordyTheme::textTertiary));
+        g.setFont (juce::FontOptions (ChordyTheme::fontMeta));
         g.drawText (ChordDetector::noteNameFromPitchClass (i),
                     static_cast<int> (x), static_cast<int> (chartBottom + 1),
                     static_cast<int> (barWidth), static_cast<int> (labelHeight),

@@ -1,4 +1,5 @@
 #include "ChordyKeyboardComponent.h"
+#include "ChordyTheme.h"
 
 ChordyKeyboardComponent::ChordyKeyboardComponent (
     juce::MidiKeyboardState& state, Orientation orientation)
@@ -20,9 +21,9 @@ juce::Colour ChordyKeyboardComponent::getOverlayColour (KeyColour kc) const
 {
     switch (kc)
     {
-        case KeyColour::Correct:  return juce::Colour (0x8800CC44); // green, semi-transparent
-        case KeyColour::Wrong:    return juce::Colour (0x88CC2200); // red, semi-transparent
-        case KeyColour::Target:   return juce::Colour (0xAA4488FF); // bright blue, clearly visible
+        case KeyColour::Correct:  return juce::Colour (ChordyTheme::keyCorrect);
+        case KeyColour::Wrong:    return juce::Colour (ChordyTheme::keyWrong);
+        case KeyColour::Target:   return juce::Colour (ChordyTheme::keyTarget);
         default:                  return juce::Colour();
     }
 }

@@ -1,4 +1,5 @@
 #include "BeatIndicatorComponent.h"
+#include "ChordyTheme.h"
 
 void BeatIndicatorComponent::setBeatInfo (int beatNumber, float beatPhase, double bpm)
 {
@@ -33,12 +34,12 @@ void BeatIndicatorComponent::paint (juce::Graphics& g)
                 pulsedSize, pulsedSize);
 
             // Downbeat vs upbeat colour
-            auto colour = (i == 0) ? juce::Colour (0xFFFF6644) : juce::Colour (0xFF44CC88);
+            auto colour = (i == 0) ? juce::Colour (ChordyTheme::beatDownbeat) : juce::Colour (ChordyTheme::beatUpbeat);
             g.setColour (colour);
         }
         else
         {
-            g.setColour (juce::Colour (0xFF445566));
+            g.setColour (juce::Colour (ChordyTheme::beatInactive));
         }
 
         g.fillEllipse (dotBounds);
@@ -46,7 +47,7 @@ void BeatIndicatorComponent::paint (juce::Graphics& g)
 
     // BPM text
     float textX = startX + totalDotsWidth + 12.0f;
-    g.setColour (juce::Colour (0xFFAABBCC));
+    g.setColour (juce::Colour (ChordyTheme::textSecondary));
     g.setFont (juce::FontOptions (14.0f, juce::Font::bold));
     g.drawText (juce::String (juce::roundToInt (currentBpm)) + " BPM",
                 static_cast<int> (textX),
