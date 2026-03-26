@@ -35,11 +35,13 @@ JUCE is included as a **git submodule** at `./JUCE/` via `add_subdirectory(JUCE)
 | File | Purpose |
 |---|---|
 | `PluginProcessor.h/.cpp` | Audio/MIDI processing hub. Owns `MidiKeyboardState`, APVTS, `VoicingLibrary`, `SpacedRepetitionEngine`, `TempoEngine`. Lock-free note sharing via atomic bitfield + mutex-protected `lastPlayedNotes`. |
-| `PluginEditor.h/.cpp` | Top-level GUI. Hosts keyboard, chord display (big root + "Up next..." preview), tabbed library panel, practice panel. 60Hz timer drives chord detection, recording, practice, beat indicator, and live stats refresh. |
+| `PluginEditor.h/.cpp` | Top-level GUI. Hosts keyboard, chord display (big root + "Up next..." preview), tabbed library panel, practice panel. 60Hz timer drives chord detection, recording, practice, beat indicator, and live stats refresh. Owns `ChordyLookAndFeel` instance, sets it as both component and default LookAndFeel. |
+| `ChordyTheme.h` | Header-only constants namespace — all colors, font sizes, spacing, corner radii. Every visual value lives here, never hardcoded elsewhere. |
+| `ChordyLookAndFeel.h/.cpp` | Custom `LookAndFeel_V4` subclass. Draws flat rounded buttons, pill toggle switches, thin-track sliders, underline tabs, clean combos/inputs/scrollbars/popups. Sets Avenir Next as global font. |
 | `TempoEngine.h/.cpp` | Audio-thread tempo engine. Internal BPM clock with optional DAW sync via `AudioPlayHead`. Generates sample-accurate metronome click (sine burst). Exposes beat position via atomics for lock-free GUI reads. Challenge timing API for measuring response time. |
 | `BeatIndicatorComponent.h/.cpp` | Visual 4-dot beat indicator with BPM display and pulse animation on the active beat. |
 | `ChordDetector.h/.cpp` | Pure-logic chord identification. Pitch-class template matching against known chord types (triads through 13ths, altered dominants, 6/9, add9). Bass note heavily prioritized as root (+30 score bonus). |
-| `ChordyKeyboardComponent.h/.cpp` | `MidiKeyboardComponent` subclass with colored key overlays (green=correct, red=wrong, bright blue=target). Overrides `drawWhiteNote`/`drawBlackNote`. |
+| `ChordyKeyboardComponent.h/.cpp` | `MidiKeyboardComponent` subclass with colored key overlays (green=correct, red=wrong, teal=target). Overrides `drawWhiteNote`/`drawBlackNote`. |
 | `VoicingModel.h/.cpp` | `Voicing` struct (intervals from root, quality, alterations, rootPitchClass) + `VoicingLibrary` class with ValueTree serialization and `findByNotes()` for matching played notes against the library. |
 | `SpacedRepetition.h/.cpp` | SM-2 spaced repetition engine with quality-based scoring (0-5). Tracks per-voicing per-key practice records (successes, failures, easeFactor, lastResponseQuality). `getStatsForVoicing()` returns per-key accuracy for the bar chart. |
 | `VoicingStatsChart.h/.cpp` | Bar chart component showing 12 vertical bars (C through B) with accuracy for a selected voicing. Green/yellow/red color coding. Refreshes live during practice. |
@@ -178,6 +180,16 @@ All new `.cpp`/`.h` files **must** be added to the `SOURCE_FILES` variable in `C
 | `useHostSync` | Bool | — | false | Sync to DAW transport |
 | `timedPractice` | Bool | — | false | Enable timed scoring |
 | `responseWindowBeats` | Float | 1-8 | 4 | Beats before timeout |
+
+## Theming System
+
+All visual styling is centralized — **never hardcode hex colors or font sizes** in component files.
+
+- **`ChordyTheme.h`**: Single source of truth for all colors (`bgDeepest`, `accent`, `success`, `danger`, etc.), font sizes, spacing constants, and corner radii. To change a color globally, edit it here.
+- **`ChordyLookAndFeel`**: Custom `LookAndFeel_V4` subclass that draws all standard JUCE widgets (buttons, toggles, sliders, combos, tabs, text editors, popups, scrollbars). Set as both per-component (`setLookAndFeel`) and global default (`setDefaultLookAndFeel`) in PluginEditor.
+- **Font**: Avenir Next, set via `setDefaultSansSerifTypefaceName()`. **Critical**: JUCE resolves typefaces through `LookAndFeel::getDefaultLookAndFeel()`, NOT the per-component LookAndFeel. That's why `setDefaultLookAndFeel(&chordyLookAndFeel)` is required in the editor constructor — without it, font changes are silently ignored.
+- **Palette**: Warm charcoal neutrals (not blue-tinted) + amber accent (`0xFFE8A634`). Semantic colors: green=success, red=danger, teal=target, amber=accent/interactive.
+- **When adding new components**: reference `ChordyTheme::` constants for all colors/sizes. Dynamic state colors (Stop=red, Record=red) use `setColour()` with theme constants.
 
 ## Key Development Notes
 
