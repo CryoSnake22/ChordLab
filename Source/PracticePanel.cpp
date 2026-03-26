@@ -189,7 +189,7 @@ void PracticePanel::setSelectedVoicingId (const juce::String& id)
         if (v != nullptr)
             headerLabel.setText ("Practice: " + v->name, juce::dontSendNotification);
         else
-            headerLabel.setText ("PRACTICE — Voicings", juce::dontSendNotification);
+            headerLabel.setText ("PRACTICE -Voicings", juce::dontSendNotification);
 
         targetLabel.setText ("Select a voicing and press Start", juce::dontSendNotification);
     }
@@ -207,7 +207,7 @@ void PracticePanel::setSelectedProgressionId (const juce::String& id)
         if (p != nullptr)
             headerLabel.setText ("Practice: " + p->name, juce::dontSendNotification);
         else
-            headerLabel.setText ("PRACTICE — Progressions", juce::dontSendNotification);
+            headerLabel.setText ("PRACTICE -Progressions", juce::dontSendNotification);
 
         targetLabel.setText ("Select a progression and press Start", juce::dontSendNotification);
     }
@@ -226,7 +226,7 @@ void PracticePanel::setSelectedMelodyId (const juce::String& id)
         if (m != nullptr)
             headerLabel.setText ("Practice: " + m->name, juce::dontSendNotification);
         else
-            headerLabel.setText ("PRACTICE — Melodies", juce::dontSendNotification);
+            headerLabel.setText ("PRACTICE -Melodies", juce::dontSendNotification);
 
         targetLabel.setText ("Select a melody and press Start", juce::dontSendNotification);
     }
@@ -239,6 +239,24 @@ void PracticePanel::onStartStop()
     if (practicing)
     {
         stopPractice();
+        return;
+    }
+
+    // Block start if nothing is selected for the current practice type
+    if (practiceType == PracticeType::Melody && selectedMelodyId.isEmpty())
+    {
+        targetLabel.setText ("Select a melody first!", juce::dontSendNotification);
+        return;
+    }
+    if (practiceType == PracticeType::Progression && selectedProgressionId.isEmpty())
+    {
+        targetLabel.setText ("Select a progression first!", juce::dontSendNotification);
+        return;
+    }
+    if (practiceType == PracticeType::Voicing && selectedVoicingId.isEmpty()
+        && processorRef.voicingLibrary.size() == 0)
+    {
+        targetLabel.setText ("Record a voicing first!", juce::dontSendNotification);
         return;
     }
 
@@ -1142,7 +1160,7 @@ void PracticePanel::loadProgressionChallenge (int keyIndex)
     targetNotes = chord.midiNotes;
 
     juce::String keyName = ChordDetector::noteNameFromPitchClass (keyIndex);
-    targetLabel.setText ("Key: " + keyName + "  —  " + chord.getDisplayName(),
+    targetLabel.setText ("Key: " + keyName + " - " + chord.getDisplayName(),
                          juce::dontSendNotification);
     targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
     feedbackLabel.setText ("", juce::dontSendNotification);
@@ -1220,7 +1238,7 @@ void PracticePanel::advanceProgressionChord()
     int keyIndex = (processorRef.progressionLibrary.getProgression (practicingProgressionId)->keyPitchClass
                     + progressionKeyOffset) % 12;
     juce::String keyName = ChordDetector::noteNameFromPitchClass (keyIndex);
-    targetLabel.setText ("Key: " + keyName + "  —  " + chord.getDisplayName(),
+    targetLabel.setText ("Key: " + keyName + " - " + chord.getDisplayName(),
                          juce::dontSendNotification);
     feedbackLabel.setText ("", juce::dontSendNotification);
 
@@ -1351,7 +1369,7 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
             int keyIdx = (processorRef.progressionLibrary.getProgression (practicingProgressionId)->keyPitchClass
                           + progressionKeyOffset) % 12;
             juce::String keyName = ChordDetector::noteNameFromPitchClass (keyIdx);
-            targetLabel.setText ("Key: " + keyName + "  —  " + chord.getDisplayName(),
+            targetLabel.setText ("Key: " + keyName + " - " + chord.getDisplayName(),
                                  juce::dontSendNotification);
 
             if (progressionTimedScored.count (targetChordIdx) == 0)
