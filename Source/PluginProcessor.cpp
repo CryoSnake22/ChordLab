@@ -12,6 +12,25 @@ AudioPluginAudioProcessor::createParameterLayout() {
   layout.add(std::make_unique<juce::AudioParameterInt>(
       juce::ParameterID{"midiChannel", 1}, "MIDI Channel", 1, 16, 1));
 
+  // Tempo engine parameters
+  layout.add(std::make_unique<juce::AudioParameterFloat>(
+      juce::ParameterID{"bpm", 1}, "BPM",
+      juce::NormalisableRange<float>(30.0f, 300.0f, 0.1f), 120.0f));
+
+  layout.add(std::make_unique<juce::AudioParameterBool>(
+      juce::ParameterID{"metronomeOn", 1}, "Metronome", false));
+
+  layout.add(std::make_unique<juce::AudioParameterBool>(
+      juce::ParameterID{"useHostSync", 1}, "Sync to Host", false));
+
+  // Timed practice parameters
+  layout.add(std::make_unique<juce::AudioParameterBool>(
+      juce::ParameterID{"timedPractice", 1}, "Timed Practice", false));
+
+  layout.add(std::make_unique<juce::AudioParameterFloat>(
+      juce::ParameterID{"responseWindowBeats", 1}, "Response Window (beats)",
+      juce::NormalisableRange<float>(1.0f, 8.0f, 0.5f), 4.0f));
+
   return layout;
 }
 
@@ -26,6 +45,11 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
 #endif
               ),
       apvts(*this, nullptr, "CHORDY_STATE", createParameterLayout()) {
+  tempoEngine.connectParameters(
+      apvts.getRawParameterValue("bpm"),
+      apvts.getRawParameterValue("metronomeOn"),
+      apvts.getRawParameterValue("useHostSync"),
+      apvts.getRawParameterValue("responseWindowBeats"));
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor() {}
@@ -84,7 +108,7 @@ void AudioPluginAudioProcessor::changeProgramName(int index,
 //==============================================================================
 void AudioPluginAudioProcessor::prepareToPlay(double sampleRate,
                                               int samplesPerBlock) {
-  juce::ignoreUnused(sampleRate, samplesPerBlock);
+  tempoEngine.prepare(sampleRate, samplesPerBlock);
 }
 
 void AudioPluginAudioProcessor::releaseResources() {}
@@ -147,6 +171,9 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
       if (high & (uint64_t(1) << i))
         lastPlayedNotes.push_back(i + 64);
   }
+
+  // Advance tempo engine — renders metronome click into buffer
+  tempoEngine.process(buffer, getPlayHead(), buffer.getNumSamples());
 }
 
 std::vector<int> AudioPluginAudioProcessor::getActiveNotes() const {

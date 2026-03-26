@@ -3,6 +3,7 @@
 #include <juce_audio_processors/juce_audio_processors.h>
 #include "VoicingModel.h"
 #include "SpacedRepetition.h"
+#include "TempoEngine.h"
 #include <atomic>
 #include <mutex>
 
@@ -65,6 +66,9 @@ public:
   // Voicing library and spaced repetition state
   VoicingLibrary voicingLibrary;
   SpacedRepetitionEngine spacedRepetition;
+
+  // Tempo engine (metronome + beat tracking)
+  TempoEngine tempoEngine;
 
 private:
   mutable std::mutex lastPlayedNotesMutex;

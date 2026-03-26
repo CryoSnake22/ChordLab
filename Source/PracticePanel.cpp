@@ -29,7 +29,7 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
     statsLabel.setJustificationType (juce::Justification::centred);
     addAndMakeVisible (statsLabel);
 
-    startButton.onClick = [this] { onStart(); };
+    startButton.onClick = [this] { onStartStop(); };
     addAndMakeVisible (startButton);
 
     nextButton.onClick = [this] { onNext(); };
@@ -39,6 +39,15 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
     playButton.onClick = [this] { onPlay(); };
     playButton.setEnabled (false);
     addAndMakeVisible (playButton);
+
+    timedToggle.setColour (juce::ToggleButton::textColourId, juce::Colour (0xFFAABBCC));
+    timedToggle.setColour (juce::ToggleButton::tickColourId, juce::Colour (0xFF44CC88));
+    addAndMakeVisible (timedToggle);
+
+    timingFeedbackLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
+    timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF889999));
+    timingFeedbackLabel.setJustificationType (juce::Justification::centred);
+    addAndMakeVisible (timingFeedbackLabel);
 
     updateStats();
 }
@@ -67,17 +76,60 @@ void PracticePanel::resized()
     buttonRow.removeFromLeft (4);
     playButton.setBounds (buttonRow);
 
+    area.removeFromTop (4);
+    timedToggle.setBounds (area.removeFromTop (24));
+
     area.removeFromTop (8);
     feedbackLabel.setBounds (area.removeFromTop (24));
+    area.removeFromTop (2);
+    timingFeedbackLabel.setBounds (area.removeFromTop (20));
     area.removeFromTop (4);
     statsLabel.setBounds (area.removeFromTop (24));
+}
+
+// --- Start / Stop ---
+
+void PracticePanel::onStartStop()
+{
+    if (practicing)
+    {
+        stopPractice();
+        return;
+    }
+
+    // Start: use currently selected voicing, or first available
+    auto& lib = processorRef.voicingLibrary;
+    if (lib.size() == 0)
+    {
+        targetLabel.setText ("Record a voicing first!", juce::dontSendNotification);
+        return;
+    }
+
+    // Turn metronome on
+    if (auto* param = processorRef.apvts.getParameter ("metronomeOn"))
+        param->setValueNotifyingHost (1.0f);
+
+    // Use selected voicing, or fall back to first available
+    juce::String voicingToUse = selectedVoicingId;
+    if (voicingToUse.isEmpty() || processorRef.voicingLibrary.getVoicing (voicingToUse) == nullptr)
+        voicingToUse = lib.getAllVoicings()[0].id;
+
+    startPractice (voicingToUse);
 }
 
 void PracticePanel::startPractice (const juce::String& voicingId)
 {
     practicing = true;
+    practicingVoicingId = voicingId;
     challengeCompleted = false;
 
+    // Update button state
+    startButton.setButtonText ("Stop");
+    startButton.setColour (juce::TextButton::buttonColourId, juce::Colour (0xFF882222));
+    nextButton.setEnabled (true);
+    playButton.setEnabled (true);
+
+    // Get first challenge
     currentChallenge = processorRef.spacedRepetition.getNextChallenge (voicingId);
 
     const auto* voicing = processorRef.voicingLibrary.getVoicing (voicingId);
@@ -87,41 +139,98 @@ void PracticePanel::startPractice (const juce::String& voicingId)
         return;
     }
 
+    // Show which voicing we're practicing
+    headerLabel.setText ("Practicing: " + voicing->name, juce::dontSendNotification);
+
     targetNotes = VoicingLibrary::transposeToKey (*voicing, currentChallenge.rootMidiNote);
 
-    juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
-    targetLabel.setText ("Play: " + keyName + ChordDetector::qualitySuffix (voicing->quality),
-                         juce::dontSendNotification);
-    feedbackLabel.setText ("", juce::dontSendNotification);
+    bool timedMode = timedToggle.getToggleState();
 
-    nextButton.setEnabled (true);
-    playButton.setEnabled (true);
+    if (timedMode)
+    {
+        // Start timed practice: count-in
+        timedPhase = TimedPhase::CountIn;
+        lastBeatInSequence = -1;
+        playPhaseScored = false;
+        hasWrongAttempt = false;
+        lastQualityScore = -1;
 
-    // Show target notes on keyboard
-    keyboardRef.clearAllColours();
-    for (int note : targetNotes)
-        keyboardRef.setKeyColour (note, KeyColour::Target);
-    keyboardRef.repaint();
+        // Reset beat counter so count-in is synced with metronome beat 1
+        processorRef.tempoEngine.resetBeatPosition();
+        processorRef.tempoEngine.markChallengeStart();
+
+        // During count-in, show countdown
+        targetLabel.setText ("Get ready...", juce::dontSendNotification);
+        feedbackLabel.setText ("", juce::dontSendNotification);
+        timingFeedbackLabel.setText ("", juce::dontSendNotification);
+
+        keyboardRef.clearAllColours();
+        keyboardRef.repaint();
+    }
+    else
+    {
+        // Untimed mode: show target immediately
+        timedPhase = TimedPhase::Inactive;
+        juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
+        targetLabel.setText ("Play: " + keyName + ChordDetector::qualitySuffix (voicing->quality),
+                             juce::dontSendNotification);
+        feedbackLabel.setText ("", juce::dontSendNotification);
+        timingFeedbackLabel.setText ("", juce::dontSendNotification);
+
+        // Show target notes on keyboard
+        keyboardRef.clearAllColours();
+        for (int note : targetNotes)
+            keyboardRef.setKeyColour (note, KeyColour::Target);
+        keyboardRef.repaint();
+    }
 }
 
 void PracticePanel::stopPractice()
 {
     practicing = false;
     challengeCompleted = false;
+    timedPhase = TimedPhase::Inactive;
     targetNotes.clear();
+    practicingVoicingId = {};
+
+    headerLabel.setText ("PRACTICE", juce::dontSendNotification);
     targetLabel.setText ("Select a voicing and press Start", juce::dontSendNotification);
     feedbackLabel.setText ("", juce::dontSendNotification);
+    timingFeedbackLabel.setText ("", juce::dontSendNotification);
+
+    startButton.setButtonText ("Start");
+    startButton.setColour (juce::TextButton::buttonColourId,
+                            getLookAndFeel().findColour (juce::TextButton::buttonColourId));
     nextButton.setEnabled (false);
     playButton.setEnabled (false);
+
     keyboardRef.clearAllColours();
     keyboardRef.repaint();
+
+    // Turn metronome off
+    if (auto* param = processorRef.apvts.getParameter ("metronomeOn"))
+        param->setValueNotifyingHost (0.0f);
+
+    processorRef.tempoEngine.clearChallengeStart();
 }
+
+// --- Practice update (called from 60Hz timer) ---
 
 void PracticePanel::updatePractice (const std::vector<int>& activeNotes)
 {
     if (! practicing || targetNotes.empty())
         return;
 
+    if (timedPhase != TimedPhase::Inactive)
+        updateTimedPractice (activeNotes);
+    else
+        updateUntimedPractice (activeNotes);
+}
+
+// --- Untimed practice (original behavior) ---
+
+void PracticePanel::updateUntimedPractice (const std::vector<int>& activeNotes)
+{
     // Auto-advance after success
     if (challengeCompleted)
     {
@@ -133,7 +242,6 @@ void PracticePanel::updatePractice (const std::vector<int>& activeNotes)
 
     if (activeNotes.empty())
     {
-        // Show target notes when nothing is pressed
         keyboardRef.clearAllColours();
         for (int note : targetNotes)
             keyboardRef.setKeyColour (note, KeyColour::Target);
@@ -143,7 +251,6 @@ void PracticePanel::updatePractice (const std::vector<int>& activeNotes)
 
     updateKeyboardColours (activeNotes);
 
-    // Check if user played correctly — compare pitch classes
     std::set<int> targetPitchClasses;
     for (int n : targetNotes)
         targetPitchClasses.insert (n % 12);
@@ -164,10 +271,212 @@ void PracticePanel::updatePractice (const std::vector<int>& activeNotes)
     }
 }
 
+// --- Timed practice (4-beat musical cycle) ---
+
+void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
+{
+    double beatsElapsed = processorRef.tempoEngine.getBeatsSinceChallengeStart();
+    int beatInSequence = static_cast<int> (std::floor (beatsElapsed));
+
+    // Detect beat transitions
+    bool beatChanged = (beatInSequence != lastBeatInSequence);
+    lastBeatInSequence = beatInSequence;
+
+    // --- Count-in phase (beats 0-3) ---
+    if (beatInSequence < 4)
+    {
+        if (beatInSequence < 2)
+        {
+            // Beats 0-1: blank count-in
+            int countdown = 4 - beatInSequence;
+            targetLabel.setText (juce::String (countdown) + "...",
+                                 juce::dontSendNotification);
+        }
+        else
+        {
+            // Beats 2-3: show first chord name (prep)
+            const auto* voicing = processorRef.voicingLibrary.getVoicing (currentChallenge.voicingId);
+            if (voicing != nullptr)
+            {
+                juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
+                targetLabel.setText ("Play: " + keyName + ChordDetector::qualitySuffix (voicing->quality),
+                                     juce::dontSendNotification);
+            }
+
+            // Show target notes on keyboard during prep
+            keyboardRef.clearAllColours();
+            for (int note : targetNotes)
+                keyboardRef.setKeyColour (note, KeyColour::Target);
+            keyboardRef.repaint();
+        }
+        return;
+    }
+
+    // --- After count-in: alternating Play/Prep cycles ---
+    int beatAfterCountIn = beatInSequence - 4;
+    int beatInCycle = beatAfterCountIn % 4;
+
+    // Beats 0-1 of cycle = Play phase, Beats 2-3 = Prep phase
+    bool inPlayPhase = (beatInCycle < 2);
+
+    if (inPlayPhase)
+    {
+        // --- PLAY PHASE ---
+        if (beatChanged && beatInCycle == 0)
+            enterPlayPhase();
+
+        if (playPhaseScored)
+        {
+            // Already scored — just keep showing feedback
+            return;
+        }
+
+        // Check user's notes
+        if (! activeNotes.empty())
+        {
+            updateKeyboardColours (activeNotes);
+
+            std::set<int> targetPitchClasses;
+            for (int n : targetNotes)
+                targetPitchClasses.insert (n % 12);
+
+            std::set<int> playedPitchClasses;
+            for (int n : activeNotes)
+                playedPitchClasses.insert (n % 12);
+
+            if (playedPitchClasses != targetPitchClasses)
+            {
+                hasWrongAttempt = true;
+            }
+            else
+            {
+                // Correct! Score based on how far into the play phase
+                double beatFraction = beatsElapsed - static_cast<double> (beatInSequence - beatInCycle);
+                int quality = computeQuality (beatFraction, hasWrongAttempt);
+                processorRef.spacedRepetition.recordAttempt (
+                    currentChallenge.voicingId, currentChallenge.keyIndex, quality);
+                lastQualityScore = quality;
+                playPhaseScored = true;
+
+                juce::String qualityText;
+                juce::Colour qualityColour;
+                switch (quality)
+                {
+                    case 5:  qualityText = "Perfect!";  qualityColour = juce::Colour (0xFF00CC44); break;
+                    case 4:  qualityText = "Good";      qualityColour = juce::Colour (0xFF44CC88); break;
+                    case 3:  qualityText = "OK";        qualityColour = juce::Colour (0xFFCCCC00); break;
+                    case 2:  qualityText = "Slow";      qualityColour = juce::Colour (0xFFCC8800); break;
+                    case 1:  qualityText = "Corrected"; qualityColour = juce::Colour (0xFFCC4400); break;
+                    default: qualityText = "Timeout";   qualityColour = juce::Colour (0xFFCC2200); break;
+                }
+
+                feedbackLabel.setText ("Correct!", juce::dontSendNotification);
+                feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00CC44));
+                timingFeedbackLabel.setText (
+                    juce::String (beatFraction, 1) + " beats - " + qualityText,
+                    juce::dontSendNotification);
+                timingFeedbackLabel.setColour (juce::Label::textColourId, qualityColour);
+                updateStats();
+            }
+        }
+        else
+        {
+            // No notes pressed — show target
+            keyboardRef.clearAllColours();
+            for (int note : targetNotes)
+                keyboardRef.setKeyColour (note, KeyColour::Target);
+            keyboardRef.repaint();
+        }
+    }
+    else
+    {
+        // --- PREP PHASE ---
+        if (beatChanged && beatInCycle == 2)
+            enterPrepPhase();
+    }
+}
+
+void PracticePanel::enterPlayPhase()
+{
+    timedPhase = TimedPhase::Play;
+    playPhaseScored = false;
+    hasWrongAttempt = false;
+
+    // Show full chord name
+    const auto* voicing = processorRef.voicingLibrary.getVoicing (currentChallenge.voicingId);
+    if (voicing != nullptr)
+    {
+        juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
+        targetLabel.setText ("Play: " + keyName + ChordDetector::qualitySuffix (voicing->quality),
+                             juce::dontSendNotification);
+    }
+
+    feedbackLabel.setText ("", juce::dontSendNotification);
+    timingFeedbackLabel.setText ("", juce::dontSendNotification);
+
+    // Show target notes
+    keyboardRef.clearAllColours();
+    for (int note : targetNotes)
+        keyboardRef.setKeyColour (note, KeyColour::Target);
+    keyboardRef.repaint();
+}
+
+void PracticePanel::enterPrepPhase()
+{
+    timedPhase = TimedPhase::Prep;
+
+    // Score the play phase if user didn't get it right
+    if (! playPhaseScored)
+    {
+        processorRef.spacedRepetition.recordAttempt (
+            currentChallenge.voicingId, currentChallenge.keyIndex, 0);
+        lastQualityScore = 0;
+        feedbackLabel.setText ("Timeout!", juce::dontSendNotification);
+        feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFCC2200));
+        timingFeedbackLabel.setText ("Q0 - Too slow", juce::dontSendNotification);
+        timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFCC2200));
+        updateStats();
+    }
+
+    // Fetch next challenge
+    nextChallenge = processorRef.spacedRepetition.getNextChallenge (practicingVoicingId);
+
+    const auto* voicing = processorRef.voicingLibrary.getVoicing (nextChallenge.voicingId);
+    if (voicing == nullptr)
+    {
+        stopPractice();
+        return;
+    }
+
+    // Load next challenge's target notes (for the upcoming play phase)
+    currentChallenge = nextChallenge;
+    targetNotes = VoicingLibrary::transposeToKey (*voicing, currentChallenge.rootMidiNote);
+
+    // Show just the ROOT of the next chord (prep)
+    juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
+    targetLabel.setText ("Next: " + keyName, juce::dontSendNotification);
+
+    // Clear keyboard
+    keyboardRef.clearAllColours();
+    keyboardRef.repaint();
+}
+
+// --- Shared helpers ---
+
 void PracticePanel::loadNextChallenge()
 {
     challengeCompleted = false;
-    startPractice (currentChallenge.voicingId);
+    startPractice (practicingVoicingId.isNotEmpty() ? practicingVoicingId
+                                                    : currentChallenge.voicingId);
+}
+
+int PracticePanel::computeQuality (double beatsElapsed, bool hadWrongAttempt)
+{
+    if (hadWrongAttempt) return 1;
+    if (beatsElapsed < 0.5) return 5;
+    if (beatsElapsed < 1.0) return 4;
+    if (beatsElapsed < 1.5) return 3;
+    return 2;
 }
 
 void PracticePanel::updateKeyboardColours (const std::vector<int>& activeNotes)
@@ -182,7 +491,6 @@ void PracticePanel::updateKeyboardColours (const std::vector<int>& activeNotes)
     for (int n : activeNotes)
         playedPitchClasses.insert (n % 12);
 
-    // Mark played notes
     for (int note : activeNotes)
     {
         int pc = note % 12;
@@ -192,7 +500,6 @@ void PracticePanel::updateKeyboardColours (const std::vector<int>& activeNotes)
             keyboardRef.setKeyColour (note, KeyColour::Wrong);
     }
 
-    // Mark unplayed target notes
     for (int note : targetNotes)
     {
         int pc = note % 12;
@@ -214,35 +521,35 @@ void PracticePanel::updateStats()
     statsLabel.setText (statsText, juce::dontSendNotification);
 }
 
-void PracticePanel::onStart()
-{
-    // Use currently selected voicing, or first available
-    auto& lib = processorRef.voicingLibrary;
-    if (lib.size() == 0)
-    {
-        targetLabel.setText ("Record a voicing first!", juce::dontSendNotification);
-        return;
-    }
-
-    // Default to first voicing if none selected externally
-    startPractice (lib.getAllVoicings()[0].id);
-}
-
 void PracticePanel::onNext()
 {
     if (! practicing)
         return;
 
-    // Mark as failure if not completed
-    if (! challengeCompleted)
+    if (timedPhase != TimedPhase::Inactive)
     {
-        processorRef.spacedRepetition.recordFailure (
-            currentChallenge.voicingId, currentChallenge.keyIndex);
-        feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFCC2200));
-        updateStats();
+        // In timed mode, skip to next — score current as failure if not scored
+        if (! playPhaseScored && timedPhase == TimedPhase::Play)
+        {
+            processorRef.spacedRepetition.recordAttempt (
+                currentChallenge.voicingId, currentChallenge.keyIndex, 0);
+            updateStats();
+        }
+        // Force into prep for next
+        enterPrepPhase();
     }
-
-    loadNextChallenge();
+    else
+    {
+        // Untimed mode
+        if (! challengeCompleted)
+        {
+            processorRef.spacedRepetition.recordFailure (
+                currentChallenge.voicingId, currentChallenge.keyIndex);
+            feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFFCC2200));
+            updateStats();
+        }
+        loadNextChallenge();
+    }
 }
 
 void PracticePanel::onPlay()
@@ -250,12 +557,10 @@ void PracticePanel::onPlay()
     if (targetNotes.empty())
         return;
 
-    // Play the target voicing through the keyboard state
     int channel = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
     for (int note : targetNotes)
         processorRef.keyboardState.noteOn (channel, note, 0.8f);
 
-    // Schedule note offs after 800ms
     juce::Timer::callAfterDelay (800, [this, channel]
     {
         for (int note : targetNotes)

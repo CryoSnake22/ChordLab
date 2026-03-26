@@ -15,12 +15,14 @@ set_property(GLOBAL PROPERTY USE_FOLDERS ON)
 set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 
 
-set(SOURCE_FILES Source/ChordDetector.cpp Source/ChordDetector.h
+set(SOURCE_FILES Source/BeatIndicatorComponent.cpp Source/BeatIndicatorComponent.h
+                 Source/ChordDetector.cpp Source/ChordDetector.h
                  Source/ChordyKeyboardComponent.cpp Source/ChordyKeyboardComponent.h
                  Source/PluginEditor.cpp Source/PluginEditor.h
                  Source/PluginProcessor.cpp Source/PluginProcessor.h
                  Source/PracticePanel.cpp Source/PracticePanel.h
                  Source/SpacedRepetition.cpp Source/SpacedRepetition.h
+                 Source/TempoEngine.cpp Source/TempoEngine.h
                  Source/VoicingLibraryPanel.cpp Source/VoicingLibraryPanel.h
                  Source/VoicingModel.cpp Source/VoicingModel.h)
 

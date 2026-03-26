@@ -28,7 +28,11 @@ public:
 
     bool isPracticing() const { return practicing; }
 
+    // Called by editor when user selects a voicing in the library
+    void setSelectedVoicingId (const juce::String& id) { selectedVoicingId = id; }
+
 private:
+    juce::String selectedVoicingId;  // tracks library panel selection
     AudioPluginAudioProcessor& processorRef;
     ChordyKeyboardComponent& keyboardRef;
 
@@ -39,17 +43,40 @@ private:
     juce::TextButton startButton { "Start" };
     juce::TextButton nextButton { "Next" };
     juce::TextButton playButton { "Play" };
+    juce::ToggleButton timedToggle { "Timed" };
+    juce::Label timingFeedbackLabel;
 
     bool practicing = false;
+    juce::String practicingVoicingId;  // which voicing we're practicing
     PracticeChallenge currentChallenge;
     std::vector<int> targetNotes;   // absolute MIDI notes for current challenge
     bool challengeCompleted = false;
     double challengeCompletedTime = 0.0;
 
-    void onStart();
+    // Timed practice state machine
+    enum class TimedPhase { Inactive, CountIn, Prep, Play };
+    TimedPhase timedPhase = TimedPhase::Inactive;
+    int lastBeatInSequence = -1;        // for detecting beat transitions
+    bool playPhaseScored = false;       // has current play phase been scored
+    bool hasWrongAttempt = false;
+    int lastQualityScore = -1;
+    double playPhaseStartBeatFraction = 0.0; // fractional beat position when play phase started
+    PracticeChallenge nextChallenge;    // pre-fetched for prep display
+
+    // Untimed practice state (legacy)
+    // (challengeCompleted + challengeCompletedTime used for 1-second auto-advance)
+
+    static int computeQuality (double beatsElapsed, bool hadWrongAttempt);
+
+    void onStartStop();
     void onNext();
     void onPlay();
     void loadNextChallenge();
+    void updateTimedPractice (const std::vector<int>& activeNotes);
+    void updateUntimedPractice (const std::vector<int>& activeNotes);
+    void enterPlayPhase();
+    void enterPrepPhase();
+    void scorePlayPhase (const std::vector<int>& activeNotes);
     void updateKeyboardColours (const std::vector<int>& activeNotes);
     void updateStats();
 };

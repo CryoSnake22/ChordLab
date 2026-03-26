@@ -25,6 +25,36 @@ void SpacedRepetitionEngine::applyFailure (PracticeRecord& r)
     r.easeFactor = std::max (1.3, r.easeFactor - 0.2);
 }
 
+void SpacedRepetitionEngine::applyQuality (PracticeRecord& r, int quality)
+{
+    r.lastAttemptTime = currentTimeSeconds();
+    r.lastResponseQuality = quality;
+
+    if (quality >= 3)
+    {
+        // Success path
+        r.successes++;
+        int n = r.successes;
+        if (n == 1)
+            r.intervalDays = 1.0;
+        else if (n == 2)
+            r.intervalDays = 6.0;
+        else
+            r.intervalDays *= r.easeFactor;
+    }
+    else
+    {
+        // Failure path — reset interval but keep easeFactor
+        r.failures++;
+        r.intervalDays = 1.0;
+    }
+
+    // SM-2 ease factor update: EF' = EF + (0.1 - (5-q) * (0.08 + (5-q) * 0.02))
+    double q = static_cast<double> (quality);
+    r.easeFactor += 0.1 - (5.0 - q) * (0.08 + (5.0 - q) * 0.02);
+    r.easeFactor = std::max (1.3, r.easeFactor);
+}
+
 double SpacedRepetitionEngine::getOverdueScore (const PracticeRecord& r,
                                                  double currentTime)
 {
@@ -80,6 +110,13 @@ void SpacedRepetitionEngine::recordFailure (const juce::String& voicingId,
 {
     auto& r = getOrCreateRecord (voicingId, keyIndex);
     applyFailure (r);
+}
+
+void SpacedRepetitionEngine::recordAttempt (const juce::String& voicingId,
+                                            int keyIndex, int quality)
+{
+    auto& r = getOrCreateRecord (voicingId, keyIndex);
+    applyQuality (r, quality);
 }
 
 PracticeChallenge SpacedRepetitionEngine::getNextChallenge (
@@ -199,6 +236,7 @@ static const juce::Identifier ID_failures ("failures");
 static const juce::Identifier ID_lastAttempt ("lastAttempt");
 static const juce::Identifier ID_interval ("interval");
 static const juce::Identifier ID_ease ("ease");
+static const juce::Identifier ID_quality ("quality");
 
 juce::ValueTree SpacedRepetitionEngine::toValueTree() const
 {
@@ -213,6 +251,7 @@ juce::ValueTree SpacedRepetitionEngine::toValueTree() const
         child.setProperty (ID_lastAttempt, r.lastAttemptTime, nullptr);
         child.setProperty (ID_interval, r.intervalDays, nullptr);
         child.setProperty (ID_ease, r.easeFactor, nullptr);
+        child.setProperty (ID_quality, r.lastResponseQuality, nullptr);
         tree.appendChild (child, nullptr);
     }
     return tree;
@@ -234,6 +273,7 @@ void SpacedRepetitionEngine::fromValueTree (const juce::ValueTree& tree)
             r.lastAttemptTime = child.getProperty (ID_lastAttempt, 0.0);
             r.intervalDays = child.getProperty (ID_interval, 1.0);
             r.easeFactor = child.getProperty (ID_ease, 2.5);
+            r.lastResponseQuality = child.getProperty (ID_quality, -1);
             records.push_back (r);
         }
     }

@@ -30,7 +30,15 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
 
   // Voicing library panel
   voicingLibraryPanel.onSelectionChanged = [this](const juce::String &voicingId) {
+    // Always track the selection so Start uses the right voicing
+    practicePanel.setSelectedVoicingId(voicingId);
+
     if (voicingId.isNotEmpty() && practicePanel.isPracticing()) {
+      // Switch to practicing the newly selected voicing
+      practicePanel.stopPractice();
+      // Turn metronome back on for the new voicing
+      if (auto* param = processorRef.apvts.getParameter("metronomeOn"))
+        param->setValueNotifyingHost(1.0f);
       practicePanel.startPractice(voicingId);
     } else if (voicingId.isNotEmpty()) {
       // Preview: highlight original voicing notes on keyboard
@@ -51,6 +59,33 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
 
   // Practice panel
   addAndMakeVisible(practicePanel);
+
+  // Tempo bar
+  bpmLabel.setText("BPM:", juce::dontSendNotification);
+  bpmLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
+  bpmLabel.setColour(juce::Label::textColourId, juce::Colour(0xFFAABBCC));
+  addAndMakeVisible(bpmLabel);
+
+  bpmSlider.setSliderStyle(juce::Slider::LinearHorizontal);
+  bpmSlider.setTextBoxStyle(juce::Slider::TextBoxLeft, false, 45, 24);
+  bpmSlider.setColour(juce::Slider::textBoxTextColourId, juce::Colour(0xFFAABBCC));
+  addAndMakeVisible(bpmSlider);
+  bpmAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+      processorRef.apvts, "bpm", bpmSlider);
+
+  metronomeToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFFAABBCC));
+  metronomeToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFF44CC88));
+  addAndMakeVisible(metronomeToggle);
+  metronomeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+      processorRef.apvts, "metronomeOn", metronomeToggle);
+
+  hostSyncToggle.setColour(juce::ToggleButton::textColourId, juce::Colour(0xFFAABBCC));
+  hostSyncToggle.setColour(juce::ToggleButton::tickColourId, juce::Colour(0xFF44CC88));
+  addAndMakeVisible(hostSyncToggle);
+  hostSyncAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+      processorRef.apvts, "useHostSync", hostSyncToggle);
+
+  addAndMakeVisible(beatIndicator);
 
   setSize(1000, 660);
   startTimerHz(60);
@@ -79,6 +114,17 @@ void AudioPluginAudioProcessorEditor::resized() {
   // Keyboard
   auto keyboardArea = area.removeFromTop(140);
   keyboard.setBounds(keyboardArea.reduced(8));
+
+  // Tempo bar
+  auto tempoArea = area.removeFromTop(36).reduced(8, 2);
+  bpmLabel.setBounds(tempoArea.removeFromLeft(36));
+  bpmSlider.setBounds(tempoArea.removeFromLeft(140));
+  tempoArea.removeFromLeft(8);
+  metronomeToggle.setBounds(tempoArea.removeFromLeft(65));
+  tempoArea.removeFromLeft(4);
+  hostSyncToggle.setBounds(tempoArea.removeFromLeft(60));
+  tempoArea.removeFromLeft(8);
+  beatIndicator.setBounds(tempoArea);
 
   // Bottom panels: library on left, practice on right
   auto bottomArea = area.reduced(8);
@@ -110,10 +156,26 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
     }
   }
 
+  // Clear voicing preview highlight when user plays notes (not during practice)
+  if (!notes.empty() && !practicePanel.isPracticing()) {
+    keyboard.clearAllColours();
+    keyboard.repaint();
+  }
+
   // Update recording state machine
   voicingLibraryPanel.updateRecording(notes);
 
   // Update practice mode
   if (practicePanel.isPracticing())
     practicePanel.updatePractice(notes);
+
+  // Update beat indicator
+  beatIndicator.setBeatInfo(
+      processorRef.tempoEngine.getBeatNumber(),
+      processorRef.tempoEngine.getBeatPhase(),
+      processorRef.tempoEngine.getEffectiveBpm());
+  beatIndicator.repaint();
+
+  // Disable BPM slider when syncing to host
+  bpmSlider.setEnabled(! hostSyncToggle.getToggleState());
 }

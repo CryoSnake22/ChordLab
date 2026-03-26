@@ -12,6 +12,7 @@ struct PracticeRecord
     double lastAttemptTime = 0; // seconds since epoch
     double intervalDays = 1.0;
     double easeFactor = 2.5;
+    int lastResponseQuality = -1; // -1 = no data, 0-5 SM-2 quality
 };
 
 struct PracticeChallenge
@@ -29,6 +30,10 @@ public:
     // Record a practice result
     void recordSuccess (const juce::String& voicingId, int keyIndex);
     void recordFailure (const juce::String& voicingId, int keyIndex);
+
+    // Quality-based recording (0-5, full SM-2 scale)
+    // 0=timeout, 1=wrong then corrected, 2=slow, 3=ok, 4=good, 5=perfect
+    void recordAttempt (const juce::String& voicingId, int keyIndex, int quality);
 
     // Get the next challenge for a given voicing (picks the most-overdue key)
     PracticeChallenge getNextChallenge (const juce::String& voicingId) const;
@@ -55,5 +60,6 @@ private:
     // SM-2 algorithm helpers
     static void applySuccess (PracticeRecord& r);
     static void applyFailure (PracticeRecord& r);
+    static void applyQuality (PracticeRecord& r, int quality);
     static double getOverdueScore (const PracticeRecord& r, double currentTime);
 };
