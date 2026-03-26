@@ -245,8 +245,8 @@ void PracticePanel::startPractice (const juce::String& voicingId)
         targetLabel.setText ("Get ready...", juce::dontSendNotification);
         feedbackLabel.setText ("", juce::dontSendNotification);
         timingFeedbackLabel.setText ("", juce::dontSendNotification);
-        practiceDisplayText = "";
-        practiceDisplayColour = juce::Colours::white;
+        currentRootText = "";
+        currentRootColour = juce::Colours::white;
 
         keyboardRef.clearAllColours();
         keyboardRef.repaint();
@@ -263,8 +263,8 @@ void PracticePanel::startPractice (const juce::String& voicingId)
         timingFeedbackLabel.setText ("", juce::dontSendNotification);
 
         // Show root in grey on main display
-        practiceDisplayText = chordText;
-        practiceDisplayColour = juce::Colour (0xFF889999);
+        currentRootText = chordText;
+        currentRootColour = juce::Colour (0xFF889999);
 
         // Show target notes on keyboard
         keyboardRef.clearAllColours();
@@ -286,8 +286,8 @@ void PracticePanel::stopPractice()
     targetLabel.setText ("Select a voicing and press Start", juce::dontSendNotification);
     targetLabel.setColour (juce::Label::textColourId, juce::Colours::white);
     feedbackLabel.setText ("", juce::dontSendNotification);
-    practiceDisplayText = {};
-    practiceDisplayColour = juce::Colours::white;
+    currentRootText = {};
+    currentRootColour = juce::Colours::white;
     timingFeedbackLabel.setText ("", juce::dontSendNotification);
 
     startButton.setButtonText ("Start");
@@ -359,7 +359,7 @@ void PracticePanel::updateUntimedPractice (const std::vector<int>& activeNotes)
         feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00CC44));
 
         // Flash green on main display
-        practiceDisplayColour = juce::Colour (0xFF00FF66);
+        currentRootColour = juce::Colour (0xFF00FF66);
 
         updateStats();
     }
@@ -398,8 +398,8 @@ void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
                 targetLabel.setColour (juce::Label::textColourId, juce::Colours::white);
 
                 // Show on main display too
-                practiceDisplayText = "Next: " + chordText;
-                practiceDisplayColour = juce::Colours::white;
+                currentRootText = "Next: " + chordText;
+                currentRootColour = juce::Colours::white;
             }
 
             // Show target notes on keyboard during prep
@@ -540,8 +540,8 @@ void PracticePanel::enterPlayPhase()
         targetLabel.setText (chordText, juce::dontSendNotification);
 
         // Show on main display in bright green
-        practiceDisplayText = chordText;
-        practiceDisplayColour = juce::Colour (0xFF00FF66);
+        currentRootText = chordText;
+        currentRootColour = juce::Colour (0xFF00FF66);
     }
     targetLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF00FF66));
 
@@ -596,8 +596,8 @@ void PracticePanel::enterPrepPhase()
     targetLabel.setColour (juce::Label::textColourId, juce::Colour (0xFF889999));
 
     // Show on main display — dim
-    practiceDisplayText = "Next: " + keyName;
-    practiceDisplayColour = juce::Colour (0xFF889999);
+    currentRootText = "Next: " + keyName;
+    currentRootColour = juce::Colour (0xFF889999);
 
     // Clear keyboard
     keyboardRef.clearAllColours();
@@ -648,8 +648,8 @@ void PracticePanel::loadNextChallenge()
         feedbackLabel.setText ("", juce::dontSendNotification);
 
         // Show root in grey on main display
-        practiceDisplayText = chordText;
-        practiceDisplayColour = juce::Colour (0xFF889999);
+        currentRootText = chordText;
+        currentRootColour = juce::Colour (0xFF889999);
 
         keyboardRef.clearAllColours();
         for (int note : targetNotes)
