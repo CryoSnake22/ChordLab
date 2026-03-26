@@ -35,7 +35,7 @@ constexpr juce::uint32 info = 0xFF5EEAD4;
 // --- Keyboard ---
 constexpr juce::uint32 keyCorrect = 0x884ADE80;
 constexpr juce::uint32 keyWrong = 0x88EF4444;
-constexpr juce::uint32 keyTarget = 0xAA5EEAD4;
+constexpr juce::uint32 keyTarget = 0xBB7DF5E0;
 constexpr juce::uint32 keyDown =
     0xBBF0B84A; // warm amber overlay when key is pressed
 constexpr juce::uint32 keyHover = 0x44E8A634; // subtle amber on mouse hover

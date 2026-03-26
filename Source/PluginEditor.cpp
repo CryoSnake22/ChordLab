@@ -73,7 +73,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   progressionLibraryPanel.onChordPreview = [this](const std::vector<int>& midiNotes) {
     keyboard.clearAllColours();
     for (int note : midiNotes)
-      keyboard.setKeyColour(note, KeyColour::Correct);
+      keyboard.setKeyColour(note, KeyColour::Target);
     keyboard.repaint();
   };
 
@@ -96,7 +96,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   melodyLibraryPanel.onNotePreview = [this](const std::vector<int>& midiNotes) {
     keyboard.clearAllColours();
     for (int note : midiNotes)
-      keyboard.setKeyColour(note, KeyColour::Correct);
+      keyboard.setKeyColour(note, KeyColour::Target);
     keyboard.repaint();
   };
 
@@ -274,10 +274,10 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
     keyboard.clearAllColours();
     for (int i = 0; i < 64; ++i)
       if (pLow & (uint64_t(1) << i))
-        keyboard.setKeyColour(i, KeyColour::Correct);
+        keyboard.setKeyColour(i, KeyColour::Target);
     for (int i = 0; i < 64; ++i)
       if (pHigh & (uint64_t(1) << i))
-        keyboard.setKeyColour(i + 64, KeyColour::Correct);
+        keyboard.setKeyColour(i + 64, KeyColour::Target);
     keyboard.repaint();
   }
 
@@ -351,7 +351,7 @@ void AudioPluginAudioProcessorEditor::startVoicingPreview (const std::vector<int
   // Show green highlights on keyboard
   keyboard.clearAllColours();
   for (int note : notes)
-    keyboard.setKeyColour (note, KeyColour::Correct);
+    keyboard.setKeyColour (note, KeyColour::Target);
   keyboard.repaint();
 
   previewNotes = notes;
@@ -372,7 +372,7 @@ void AudioPluginAudioProcessorEditor::stopVoicingPreview()
   // Keep light green highlights after playback
   keyboard.clearAllColours();
   for (int note : previewNotes)
-    keyboard.setKeyColour (note, KeyColour::Correct);
+    keyboard.setKeyColour (note, KeyColour::Target);
   keyboard.repaint();
 
   previewNotes.clear();
