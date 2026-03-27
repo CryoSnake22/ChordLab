@@ -46,6 +46,9 @@ void TempoEngine::process (juce::AudioBuffer<float>& buffer,
         beatPhase.store (0.0f, std::memory_order_relaxed);
         beatTick.store (false, std::memory_order_relaxed);
         currentBeatPosition.store (0.0, std::memory_order_relaxed);
+        // Also reset challenge start so getBeatsSinceChallengeStart() returns 0
+        // (markChallengeStart runs on GUI thread before this, capturing the old position)
+        challengeStartBeatPosition.store (0.0, std::memory_order_relaxed);
     }
 
     float bpm = (bpmParam != nullptr) ? bpmParam->load() : 120.0f;

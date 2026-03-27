@@ -415,11 +415,15 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
       processorRef.tempoEngine.getEffectiveBpm());
   beatIndicator.repaint();
 
-  // Detect tab changes — deselect previous tab's selection
+  // Detect tab changes — deselect previous tab's selection and stop playback
   int currentTab = libraryTabs.getCurrentTabIndex();
   if (currentTab != lastTabIndex) {
     lastTabIndex = currentTab;
     stopVoicingPreview();
+    if (processorRef.isPlayingProgression())
+      processorRef.stopProgressionPlayback();
+    if (processorRef.isPlayingMelody())
+      processorRef.stopMelodyPlayback();
     keyboard.clearAllColours();
     keyboard.repaint();
 
