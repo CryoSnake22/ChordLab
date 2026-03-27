@@ -18,6 +18,7 @@ set(CMAKE_EXPORT_COMPILE_COMMANDS ON)
 set(SOURCE_FILES Source/BeatIndicatorComponent.cpp Source/BeatIndicatorComponent.h
                  Source/ChordDetector.cpp Source/ChordDetector.h
                  Source/ChordySynth.cpp Source/ChordySynth.h
+                 Source/ExternalInstrument.cpp Source/ExternalInstrument.h
                  Source/MelodyChartComponent.cpp Source/MelodyChartComponent.h
                  Source/MelodyLibraryPanel.cpp Source/MelodyLibraryPanel.h
                  Source/MelodyModel.cpp Source/MelodyModel.h
@@ -75,7 +76,9 @@ target_sources(${PROJECT_NAME} PRIVATE ${SOURCE_FILES})
 # These are some toggleable options from the JUCE CMake API
 target_compile_definitions(
   ${PROJECT_NAME} PUBLIC JUCE_WEB_BROWSER=0 JUCE_USE_CURL=0
-                         JUCE_VST3_CAN_REPLACE_VST2=0)
+                         JUCE_VST3_CAN_REPLACE_VST2=0
+                         JUCE_PLUGINHOST_VST3=1
+                         JUCE_PLUGINHOST_AU=1)
 
 # JUCE libraries to bring into our project
 target_link_libraries(

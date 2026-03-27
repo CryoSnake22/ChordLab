@@ -54,14 +54,40 @@ private:
   juce::ToggleButton hostSyncToggle { "Sync" };
   BeatIndicatorComponent beatIndicator;
 
-  // Synth controls
-  juce::ToggleButton synthToggle { "Synth" };
+  // Instrument mode
+  juce::ComboBox instrumentModeCombo;
+  juce::ComboBox pluginSelector;
+  juce::TextButton rescanButton { "Scan" };
+  juce::TextButton editPluginButton { "Open" };
   juce::Slider synthVolumeSlider;
+  bool isStandaloneMode = false;
+
+  // Hosted plugin editor window
+  class PluginEditorWindow : public juce::DocumentWindow
+  {
+  public:
+      PluginEditorWindow (juce::AudioProcessorEditor* editor)
+          : juce::DocumentWindow (editor->getAudioProcessor()->getName(),
+                                   juce::Colour (0xFF1E1E1E),
+                                   juce::DocumentWindow::closeButton)
+      {
+          setContentOwned (editor, true);
+          setResizable (true, false);
+          centreWithSize (getWidth(), getHeight());
+          setVisible (true);
+          setAlwaysOnTop (true);
+      }
+
+      void closeButtonPressed() override { setVisible (false); }
+  };
+
+  std::unique_ptr<PluginEditorWindow> pluginEditorWindow;
+  void openPluginEditor();
+  void closePluginEditor();
 
   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> bpmAttachment;
   std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> metronomeAttachment;
   std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> hostSyncAttachment;
-  std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> synthToggleAttachment;
   std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> synthVolumeAttachment;
 
   // Tab tracking — deselect when switching tabs

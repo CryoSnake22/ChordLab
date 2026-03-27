@@ -133,10 +133,94 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
 
   addAndMakeVisible(beatIndicator);
 
-  // Synth toggle + volume
-  addAndMakeVisible(synthToggle);
-  synthToggleAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-      processorRef.apvts, "synthEnabled", synthToggle);
+  // Instrument mode combo
+  isStandaloneMode = (processorRef.wrapperType == juce::AudioProcessor::wrapperType_Standalone);
+
+  instrumentModeCombo.addItem("Internal", 1);
+  instrumentModeCombo.addItem("External", 2);
+  instrumentModeCombo.setSelectedId(
+      *processorRef.apvts.getRawParameterValue("synthEnabled") > 0.5f ? 1 : 2,
+      juce::dontSendNotification);
+  instrumentModeCombo.onChange = [this] {
+    bool internal = (instrumentModeCombo.getSelectedId() == 1);
+    if (auto* param = processorRef.apvts.getParameter("synthEnabled"))
+      param->setValueNotifyingHost(internal ? 1.0f : 0.0f);
+
+    // Show/hide plugin selector in Standalone external mode
+    bool showPluginSelector = isStandaloneMode && !internal;
+    pluginSelector.setVisible(showPluginSelector);
+    rescanButton.setVisible(showPluginSelector);
+    editPluginButton.setVisible(showPluginSelector && processorRef.externalInstrument.isPluginLoaded());
+    if (internal)
+      closePluginEditor();
+    resized();
+  };
+  addAndMakeVisible(instrumentModeCombo);
+
+  // Plugin selector (Standalone only, visible when External mode)
+  pluginSelector.setTextWhenNothingSelected("Select instrument...");
+  pluginSelector.onChange = [this] {
+    int selectedId = pluginSelector.getSelectedId();
+    if (selectedId <= 0) return;
+
+    auto instruments = processorRef.externalInstrument.getAvailableInstruments();
+    int idx = selectedId - 1;
+    if (idx >= 0 && idx < instruments.size())
+      processorRef.externalInstrument.loadPlugin(instruments[idx]);
+  };
+  pluginSelector.setVisible(false);
+  addAndMakeVisible(pluginSelector);
+
+  // Edit plugin button (opens hosted plugin's own GUI)
+  editPluginButton.onClick = [this] { openPluginEditor(); };
+  editPluginButton.setVisible(false);
+  addAndMakeVisible(editPluginButton);
+
+  // Rescan button
+  rescanButton.onClick = [this] {
+    processorRef.externalInstrument.startScan();
+    rescanButton.setButtonText("...");
+    rescanButton.setEnabled(false);
+  };
+  rescanButton.setVisible(false);
+  addAndMakeVisible(rescanButton);
+
+  // Populate plugin selector from cached scan results
+  processorRef.externalInstrument.onPluginListChanged = [this] {
+    auto instruments = processorRef.externalInstrument.getAvailableInstruments();
+    pluginSelector.clear(juce::dontSendNotification);
+    for (int i = 0; i < instruments.size(); ++i)
+      pluginSelector.addItem(instruments[i].name, i + 1);
+    rescanButton.setButtonText("Scan");
+    rescanButton.setEnabled(true);
+  };
+
+  processorRef.externalInstrument.onPluginLoaded = [this] {
+    auto name = processorRef.externalInstrument.getPluginName();
+    for (int i = 0; i < pluginSelector.getNumItems(); ++i)
+    {
+      if (pluginSelector.getItemText(i) == name)
+      {
+        pluginSelector.setSelectedItemIndex(i, juce::dontSendNotification);
+        break;
+      }
+    }
+    editPluginButton.setVisible(true);
+    resized();
+  };
+
+  processorRef.externalInstrument.onPluginLoadFailed = [this](const juce::String& error) {
+    juce::ignoreUnused(error);
+    pluginSelector.setSelectedId(0, juce::dontSendNotification);
+    editPluginButton.setVisible(false);
+  };
+
+  // Initial population from cache
+  {
+    auto instruments = processorRef.externalInstrument.getAvailableInstruments();
+    for (int i = 0; i < instruments.size(); ++i)
+      pluginSelector.addItem(instruments[i].name, i + 1);
+  }
 
   synthVolumeSlider.setSliderStyle(juce::Slider::LinearHorizontal);
   synthVolumeSlider.setTextBoxStyle(juce::Slider::NoTextBox, true, 0, 0);
@@ -150,6 +234,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
 }
 
 AudioPluginAudioProcessorEditor::~AudioPluginAudioProcessorEditor() {
+  closePluginEditor();
   juce::LookAndFeel::setDefaultLookAndFeel(nullptr);
   setLookAndFeel(nullptr);
   stopTimer();
@@ -198,8 +283,20 @@ void AudioPluginAudioProcessorEditor::resized() {
   tempoArea.removeFromLeft(4);
   hostSyncToggle.setBounds(tempoArea.removeFromLeft(75));
   tempoArea.removeFromLeft(8);
-  synthToggle.setBounds(tempoArea.removeFromLeft(75));
+  instrumentModeCombo.setBounds(tempoArea.removeFromLeft(100));
   tempoArea.removeFromLeft(4);
+  if (pluginSelector.isVisible())
+  {
+    pluginSelector.setBounds(tempoArea.removeFromLeft(140));
+    tempoArea.removeFromLeft(4);
+    rescanButton.setBounds(tempoArea.removeFromLeft(40));
+    tempoArea.removeFromLeft(4);
+    if (editPluginButton.isVisible())
+    {
+      editPluginButton.setBounds(tempoArea.removeFromLeft(40));
+      tempoArea.removeFromLeft(4);
+    }
+  }
   synthVolumeSlider.setBounds(tempoArea.removeFromLeft(70));
   tempoArea.removeFromLeft(8);
   beatIndicator.setBounds(tempoArea);
@@ -377,4 +474,23 @@ void AudioPluginAudioProcessorEditor::stopVoicingPreview()
 
   previewNotes.clear();
   previewFramesRemaining = 0;
+}
+
+void AudioPluginAudioProcessorEditor::openPluginEditor()
+{
+  auto* plugin = processorRef.externalInstrument.getHostedPlugin();
+  if (plugin == nullptr)
+    return;
+
+  // Close existing window if open
+  closePluginEditor();
+
+  auto* editor = plugin->createEditorIfNeeded();
+  if (editor != nullptr)
+    pluginEditorWindow = std::make_unique<PluginEditorWindow> (editor);
+}
+
+void AudioPluginAudioProcessorEditor::closePluginEditor()
+{
+  pluginEditorWindow.reset();
 }

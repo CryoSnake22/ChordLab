@@ -8,6 +8,7 @@
 #include "ProgressionModel.h"
 #include "ProgressionRecorder.h"
 #include "MelodyModel.h"
+#include "ExternalInstrument.h"
 #include <atomic>
 #include <mutex>
 
@@ -83,6 +84,9 @@ public:
 
   // Melody library
   MelodyLibrary melodyLibrary;
+
+  // External instrument hosting (Standalone VST/AU loading)
+  ExternalInstrument externalInstrument;
 
   // Preview MIDI injection — GUI thread pushes, audio thread drains into synth
   void addPreviewMidi (const juce::MidiMessage& msg);

@@ -58,6 +58,8 @@ AudioPluginAudioProcessor::AudioPluginAudioProcessor()
       apvts.getRawParameterValue("metronomeOn"),
       apvts.getRawParameterValue("useHostSync"),
       apvts.getRawParameterValue("responseWindowBeats"));
+
+  externalInstrument.initialize();
 }
 
 AudioPluginAudioProcessor::~AudioPluginAudioProcessor() {}
@@ -118,9 +120,12 @@ void AudioPluginAudioProcessor::prepareToPlay(double sampleRate,
                                               int samplesPerBlock) {
   tempoEngine.prepare(sampleRate, samplesPerBlock);
   internalSynth.setCurrentPlaybackSampleRate(sampleRate);
+  externalInstrument.prepare(sampleRate, samplesPerBlock);
 }
 
-void AudioPluginAudioProcessor::releaseResources() {}
+void AudioPluginAudioProcessor::releaseResources() {
+  externalInstrument.release();
+}
 
 bool AudioPluginAudioProcessor::isBusesLayoutSupported(
     const BusesLayout &layouts) const {
@@ -322,10 +327,16 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     }
   }
 
-  // Internal synth — render MIDI as audio (Rhodes-like FM)
-  if (*apvts.getRawParameterValue("synthEnabled") > 0.5f) {
+  // Instrument rendering — internal synth or external (MIDI pass-through / hosted plugin)
+  bool useInternalSynth = *apvts.getRawParameterValue("synthEnabled") > 0.5f;
+
+  if (useInternalSynth) {
     internalSynth.setVolume(*apvts.getRawParameterValue("synthVolume"));
     internalSynth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
+  } else {
+    // External mode: route to hosted plugin if available, otherwise silence
+    if (! externalInstrument.processBlock(buffer, midiMessages))
+      buffer.clear();
   }
 
   // Advance tempo engine — renders metronome click into buffer
@@ -370,10 +381,16 @@ void AudioPluginAudioProcessor::getStateInformation(
   state.removeChild(state.getChildWithName("SpacedRepetition"), nullptr);
   state.removeChild(state.getChildWithName("ProgressionLibrary"), nullptr);
   state.removeChild(state.getChildWithName("MelodyLibrary"), nullptr);
+  state.removeChild(state.getChildWithName("ExternalInstrument"), nullptr);
   state.appendChild(voicingLibrary.toValueTree(), nullptr);
   state.appendChild(spacedRepetition.toValueTree(), nullptr);
   state.appendChild(progressionLibrary.toValueTree(), nullptr);
   state.appendChild(melodyLibrary.toValueTree(), nullptr);
+
+  // Save external instrument state
+  auto extXml = externalInstrument.createStateXml();
+  if (extXml != nullptr)
+    state.appendChild(juce::ValueTree::fromXml(*extXml), nullptr);
 
   std::unique_ptr<juce::XmlElement> xml(state.createXml());
   copyXmlToBinary(*xml, destData);
@@ -401,6 +418,15 @@ void AudioPluginAudioProcessor::setStateInformation(const void *data,
     auto mlTree = state.getChildWithName("MelodyLibrary");
     if (mlTree.isValid())
       melodyLibrary.fromValueTree(mlTree);
+
+    auto extTree = state.getChildWithName("ExternalInstrument");
+    if (extTree.isValid())
+    {
+      auto extXml = extTree.createXml();
+      if (extXml != nullptr)
+        externalInstrument.restoreFromStateXml(*extXml, getSampleRate(),
+                                                getBlockSize());
+    }
 
     apvts.replaceState(state);
   }
