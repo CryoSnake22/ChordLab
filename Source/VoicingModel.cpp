@@ -1,5 +1,6 @@
 #include "VoicingModel.h"
 #include <algorithm>
+#include <numeric>
 
 void VoicingLibrary::addVoicing (const Voicing& v)
 {
@@ -32,7 +33,8 @@ std::vector<Voicing> VoicingLibrary::getVoicingsByQuality (ChordQuality q) const
 }
 
 Voicing VoicingLibrary::createFromNotes (const std::vector<int>& midiNotes,
-                                         const juce::String& name)
+                                         const juce::String& name,
+                                         const std::vector<int>& noteVelocities)
 {
     Voicing v;
     v.id = juce::Uuid().toString();
@@ -41,16 +43,21 @@ Voicing VoicingLibrary::createFromNotes (const std::vector<int>& midiNotes,
     if (midiNotes.empty())
         return v;
 
-    // Sort notes and compute intervals from the lowest note
-    auto sorted = midiNotes;
-    std::sort (sorted.begin(), sorted.end());
+    // Sort notes (and velocities in parallel) and compute intervals from the lowest note
+    std::vector<size_t> indices (midiNotes.size());
+    std::iota (indices.begin(), indices.end(), 0);
+    std::sort (indices.begin(), indices.end(),
+               [&midiNotes] (size_t a, size_t b) { return midiNotes[a] < midiNotes[b]; });
 
-    int root = sorted[0];
+    int root = midiNotes[indices[0]];
     v.octaveReference = root;
     v.rootPitchClass = root % 12;
 
-    for (int note : sorted)
-        v.intervals.push_back (note - root);
+    for (size_t idx : indices)
+    {
+        v.intervals.push_back (midiNotes[idx] - root);
+        v.velocities.push_back (idx < noteVelocities.size() ? noteVelocities[idx] : 100);
+    }
 
     // Auto-detect quality using ChordDetector
     auto chordResult = ChordDetector::detect (midiNotes);
@@ -111,6 +118,7 @@ static const juce::Identifier ID_quality ("quality");
 static const juce::Identifier ID_alterations ("alterations");
 static const juce::Identifier ID_rootPitchClass ("rootPitchClass");
 static const juce::Identifier ID_intervals ("intervals");
+static const juce::Identifier ID_velocities ("velocities");
 static const juce::Identifier ID_octaveRef ("octaveRef");
 
 static juce::String intervalsToString (const std::vector<int>& intervals)
@@ -143,6 +151,7 @@ juce::ValueTree VoicingLibrary::voicingToValueTree (const Voicing& v)
     tree.setProperty (ID_alterations, v.alterations, nullptr);
     tree.setProperty (ID_rootPitchClass, v.rootPitchClass, nullptr);
     tree.setProperty (ID_intervals, intervalsToString (v.intervals), nullptr);
+    tree.setProperty (ID_velocities, intervalsToString (v.velocities), nullptr);
     tree.setProperty (ID_octaveRef, v.octaveReference, nullptr);
     return tree;
 }
@@ -156,6 +165,7 @@ Voicing VoicingLibrary::voicingFromValueTree (const juce::ValueTree& tree)
     v.alterations = tree.getProperty (ID_alterations).toString();
     v.rootPitchClass = tree.getProperty (ID_rootPitchClass, 0);
     v.intervals = stringToIntervals (tree.getProperty (ID_intervals).toString());
+    v.velocities = stringToIntervals (tree.getProperty (ID_velocities).toString());
     v.octaveReference = tree.getProperty (ID_octaveRef, 60);
     return v;
 }

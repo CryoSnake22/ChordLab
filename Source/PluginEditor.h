@@ -98,7 +98,7 @@ private:
   int previewFramesRemaining = 0;
   static constexpr int previewDurationFrames = 30; // ~0.5s hold, then release envelope fades
 
-  void startVoicingPreview (const std::vector<int>& notes);
+  void startVoicingPreview (const std::vector<int>& notes, const std::vector<int>& velocities = {});
   void stopVoicingPreview();
 
   JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(AudioPluginAudioProcessorEditor)

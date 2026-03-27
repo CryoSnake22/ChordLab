@@ -58,9 +58,11 @@ public:
   // Lock-free active notes bitfield for GUI thread reads
   std::atomic<uint64_t> activeNotesLow{0};  // notes 0-63
   std::atomic<uint64_t> activeNotesHigh{0}; // notes 64-127
+  std::atomic<uint8_t> noteVelocities[128] {};  // last velocity per note
 
   // Convenience: read active notes as a vector (call from GUI thread)
   std::vector<int> getActiveNotes() const;
+  int getNoteVelocity (int noteNumber) const;
 
   // Last-played notes: persists after key release so Record can capture them
   std::vector<int> getLastPlayedNotes() const;

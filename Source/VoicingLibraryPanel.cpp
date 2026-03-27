@@ -284,8 +284,12 @@ void VoicingLibraryPanel::updateRecording (const std::vector<int>& activeNotes)
         {
             recordState = RecordState::Capturing;
             capturedNotes.clear();
+            capturedVelocities.clear();
             for (int n : activeNotes)
+            {
                 capturedNotes.push_back (n);
+                capturedVelocities.push_back (processorRef.getNoteVelocity (n));
+            }
             recordingIndicator.setText ("REC - Playing...", juce::dontSendNotification);
         }
         return;
@@ -299,8 +303,10 @@ void VoicingLibraryPanel::updateRecording (const std::vector<int>& activeNotes)
             for (int n : activeNotes)
             {
                 if (std::find (capturedNotes.begin(), capturedNotes.end(), n) == capturedNotes.end())
+                {
                     capturedNotes.push_back (n);
-            }
+                    capturedVelocities.push_back (processorRef.getNoteVelocity (n));
+                }
         }
         else
         {
@@ -396,8 +402,9 @@ void VoicingLibraryPanel::finishRecording()
     }
 
     // Create pending voicing and transition to confirmation
-    pendingVoicing = VoicingLibrary::createFromNotes (capturedNotes, "");
+    pendingVoicing = VoicingLibrary::createFromNotes (capturedNotes, "", capturedVelocities);
     capturedNotes.clear();
+    capturedVelocities.clear();
 
     recordState = RecordState::Confirming;
     recordingIndicator.setVisible (false);

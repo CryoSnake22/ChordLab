@@ -66,6 +66,7 @@ private:
     enum class RecordState { Idle, Waiting, Capturing, Confirming };
     RecordState recordState = RecordState::Idle;
     std::vector<int> capturedNotes;
+    std::vector<int> capturedVelocities;
     Voicing pendingVoicing; // voicing being confirmed
 
     // Filtered list of voicings currently displayed

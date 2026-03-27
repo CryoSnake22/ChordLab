@@ -61,7 +61,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
         auto notes = VoicingLibrary::transposeToKey(*v, v->octaveReference);
         for (int note : notes)
           keyboard.setKeyColour(note, KeyColour::Target);
-        startVoicingPreview(notes);
+        startVoicingPreview(notes, v->velocities);
       }
       keyboard.repaint();
     } else {
@@ -435,15 +435,21 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
   bpmSlider.setEnabled(! hostSyncToggle.getToggleState());
 }
 
-void AudioPluginAudioProcessorEditor::startVoicingPreview (const std::vector<int>& notes)
+void AudioPluginAudioProcessorEditor::startVoicingPreview (const std::vector<int>& notes,
+                                                            const std::vector<int>& velocities)
 {
   stopVoicingPreview();
 
   int channel = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
 
-  // Send MIDI directly to synth (bypasses keyboardState — no keyboard flash)
-  for (int note : notes)
-    processorRef.addPreviewMidi (juce::MidiMessage::noteOn (channel, note, 0.8f));
+  // Send MIDI directly to synth with recorded velocities
+  for (size_t i = 0; i < notes.size(); ++i)
+  {
+    float vel = (i < velocities.size())
+        ? static_cast<float>(velocities[i]) / 127.0f
+        : 0.8f;
+    processorRef.addPreviewMidi (juce::MidiMessage::noteOn (channel, notes[i], vel));
+  }
 
   // Show green highlights on keyboard
   keyboard.clearAllColours();

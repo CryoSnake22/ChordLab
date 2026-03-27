@@ -156,6 +156,15 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
     buffer.clear(i, 0, buffer.getNumSamples());
 
+  // Capture note velocities before keyboardState processes the buffer
+  for (const auto meta : midiMessages)
+  {
+    auto msg = meta.getMessage();
+    if (msg.isNoteOn() && msg.getVelocity() > 0)
+      noteVelocities[msg.getNoteNumber()].store(
+          static_cast<uint8_t>(msg.getVelocity()), std::memory_order_relaxed);
+  }
+
   // Feed MIDI into keyboard state (bridges audio thread → GUI thread).
   // injectIndirectEvents=true allows on-screen keyboard clicks to generate MIDI output.
   keyboardState.processNextMidiBuffer(midiMessages, 0, buffer.getNumSamples(),
@@ -354,6 +363,12 @@ std::vector<int> AudioPluginAudioProcessor::getActiveNotes() const {
       notes.push_back(i + 64);
 
   return notes;
+}
+
+int AudioPluginAudioProcessor::getNoteVelocity (int noteNumber) const {
+  if (noteNumber >= 0 && noteNumber < 128)
+    return static_cast<int>(noteVelocities[noteNumber].load(std::memory_order_relaxed));
+  return 100;
 }
 
 std::vector<int> AudioPluginAudioProcessor::getLastPlayedNotes() const {

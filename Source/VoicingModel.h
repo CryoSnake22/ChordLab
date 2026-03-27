@@ -11,8 +11,9 @@ struct Voicing
     ChordQuality quality = ChordQuality::Unknown;
     juce::String alterations;    // user-defined extensions like "#9#11b5"
     int rootPitchClass = 0;      // 0-11 (C=0), user-confirmed root
-    std::vector<int> intervals;  // semitones from root, always starts with 0
-    int octaveReference = 60;    // MIDI note of root when recorded
+    std::vector<int> intervals;   // semitones from root, always starts with 0
+    std::vector<int> velocities;  // per-note velocities (parallel to intervals)
+    int octaveReference = 60;     // MIDI note of root when recorded
 
     bool isValid() const { return ! intervals.empty() && ! id.isEmpty(); }
 
@@ -41,7 +42,8 @@ public:
 
     // Create a voicing from raw MIDI notes (auto-detects quality)
     static Voicing createFromNotes (const std::vector<int>& midiNotes,
-                                    const juce::String& name);
+                                    const juce::String& name,
+                                    const std::vector<int>& noteVelocities = {});
 
     // Transpose a voicing to a specific root note, returning absolute MIDI notes
     static std::vector<int> transposeToKey (const Voicing& v, int rootMidiNote);
