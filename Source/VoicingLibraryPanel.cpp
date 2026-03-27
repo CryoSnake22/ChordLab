@@ -307,6 +307,7 @@ void VoicingLibraryPanel::updateRecording (const std::vector<int>& activeNotes)
                     capturedNotes.push_back (n);
                     capturedVelocities.push_back (processorRef.getNoteVelocity (n));
                 }
+            }
         }
         else
         {
