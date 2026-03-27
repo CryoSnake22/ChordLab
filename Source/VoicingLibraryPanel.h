@@ -30,6 +30,8 @@ public:
 
     // Callback when selection changes
     std::function<void (const juce::String& voicingId)> onSelectionChanged;
+    std::function<void()> onRecordStarted;
+    void setButtonsEnabled (bool enabled);
 
     // Callback for stats chart key preview (notes + velocities)
     std::function<void (const std::vector<int>& notes, const std::vector<int>& velocities)> onKeyPreview;

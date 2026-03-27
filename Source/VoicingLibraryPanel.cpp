@@ -359,6 +359,12 @@ void VoicingLibraryPanel::refreshStatsChart()
         statsChart.setStats (processorRef.spacedRepetition.getStatsForVoicing (selectedId));
 }
 
+void VoicingLibraryPanel::setButtonsEnabled (bool enabled)
+{
+    recordButton.setEnabled (enabled);
+    deleteButton.setEnabled (enabled);
+}
+
 void VoicingLibraryPanel::updateDisplayedVoicings()
 {
     int filterId = qualityFilter.getSelectedId();
@@ -422,6 +428,9 @@ void VoicingLibraryPanel::onRecordToggle()
         cancelRecording();
         return;
     }
+
+    if (onRecordStarted)
+        onRecordStarted();
 
     recordState = RecordState::Waiting;
     capturedNotes.clear();

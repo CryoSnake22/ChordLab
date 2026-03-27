@@ -25,6 +25,8 @@ public:
     void refreshStatsChart();
 
     std::function<void (const juce::String& melodyId)> onSelectionChanged;
+    std::function<void()> onRecordStarted;
+    void setButtonsEnabled (bool enabled);
     std::function<void (const std::vector<int>& midiNotes)> onNotePreview;
     std::function<void (const Melody& transposed)> onTransposedPreview;
 

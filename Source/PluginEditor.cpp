@@ -34,6 +34,18 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   nextRootLabel.setJustificationType(juce::Justification::centred);
   addAndMakeVisible(nextRootLabel);
 
+  practiceRootLabel.setFont(juce::FontOptions(36.0f, juce::Font::bold));
+  practiceRootLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::accent));
+  practiceRootLabel.setJustificationType(juce::Justification::centredLeft);
+  practiceRootLabel.setVisible(false);
+  addAndMakeVisible(practiceRootLabel);
+
+  countdownLabel.setFont(juce::FontOptions(18.0f, juce::Font::bold));
+  countdownLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textTertiary));
+  countdownLabel.setJustificationType(juce::Justification::centredLeft);
+  countdownLabel.setVisible(false);
+  addAndMakeVisible(countdownLabel);
+
   // Keyboard — wider keys, proper proportions
   keyboard.setAvailableRange(36, 96); // C2 to C7
   keyboard.setKeyWidth(28.0f);
@@ -58,10 +70,11 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
       keyboard.clearAllColours();
       const auto *v = processorRef.voicingLibrary.getVoicing(voicingId);
       if (v != nullptr) {
-        auto notes = VoicingLibrary::transposeToKey(*v, v->octaveReference);
-        for (int note : notes)
+        auto vnotes = VoicingLibrary::transposeToKey(*v, v->octaveReference);
+        for (int note : vnotes)
           keyboard.setKeyColour(note, KeyColour::Target);
-        startVoicingPreview(notes, v->velocities);
+        startVoicingPreview(vnotes, v->velocities);
+        practicePanel.setClickedChordName(v->name, 40);
       }
       keyboard.repaint();
     } else {
@@ -70,8 +83,11 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
     }
   };
   // Stats chart key preview → play voicing in clicked key
-  voicingLibraryPanel.onKeyPreview = [this](const std::vector<int>& notes, const std::vector<int>& velocities) {
-    startVoicingPreview(notes, velocities);
+  voicingLibraryPanel.onKeyPreview = [this](const std::vector<int>& vnotes, const std::vector<int>& velocities) {
+    startVoicingPreview(vnotes, velocities);
+    auto result = ChordDetector::detect(vnotes);
+    if (result.isValid())
+      practicePanel.setClickedChordName(result.displayName, 40);
   };
 
   // Progression chord preview → highlight keyboard
@@ -126,6 +142,18 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   libraryTabs.setTabBarDepth(28);
   libraryTabs.setOutline(0);
   addAndMakeVisible(libraryTabs);
+
+  // Record button on any panel → clear keyboard + stop playback
+  auto onRecord = [this] {
+    keyboard.clearAllColours();
+    keyboard.repaint();
+    if (processorRef.isPlayingProgression()) processorRef.stopProgressionPlayback();
+    if (processorRef.isPlayingMelody()) processorRef.stopMelodyPlayback();
+    stopVoicingPreview();
+  };
+  voicingLibraryPanel.onRecordStarted = onRecord;
+  progressionLibraryPanel.onRecordStarted = onRecord;
+  melodyLibraryPanel.onRecordStarted = onRecord;
 
   // Practice panel
   addAndMakeVisible(practicePanel);
@@ -304,11 +332,17 @@ void AudioPluginAudioProcessorEditor::resized() {
   auto headerArea = area.removeFromTop(40);
   titleLabel.setBounds(headerArea.reduced(10, 5));
 
-  // Chord display — big current root + smaller "up next"
+  // Chord display — chord detection always centered, practice root overlaid on left
   auto chordArea = area.removeFromTop(80);
   auto mainChordArea = chordArea.removeFromTop(52);
+
+  // Chord label spans full center
   chordDisplayLabel.setBounds(mainChordArea.reduced(10, 0));
-  nextRootLabel.setBounds(chordArea.reduced(10, 0));
+
+  // Practice root + countdown overlaid on the left (don't shift center)
+  practiceRootLabel.setBounds(mainChordArea.removeFromLeft(140).reduced(14, 0));
+  countdownLabel.setBounds(chordArea.removeFromLeft(140).reduced(14, 0));
+  nextRootLabel.setBounds(chordArea.removeFromLeft(200).reduced(10, 0));
 
   // Keyboard
   auto keyboardArea = area.removeFromTop(140);
@@ -391,46 +425,64 @@ void AudioPluginAudioProcessorEditor::resized() {
 void AudioPluginAudioProcessorEditor::timerCallback() {
   auto notes = processorRef.getActiveNotes();
 
-  // During practice, override chord display with current + next root
+  // --- Practice root label (left side) ---
   if (practicePanel.isPracticing()) {
     auto rootText = practicePanel.getCurrentRootText();
-    chordDisplayLabel.setText(rootText, juce::dontSendNotification);
-    chordDisplayLabel.setColour(juce::Label::textColourId,
-                                 practicePanel.getCurrentRootColour());
-    chordDisplayLabel.setFont(juce::FontOptions(48.0f, juce::Font::bold));
+    if (rootText.isNotEmpty())
+      practiceRootLabel.setText("Key: " + rootText, juce::dontSendNotification);
+    practiceRootLabel.setColour(juce::Label::textColourId, practicePanel.getCurrentRootColour());
+    practiceRootLabel.setVisible(rootText.isNotEmpty());
 
-    // Show countdown on the "up next" line (smaller, darker) during count-in
     auto countdownStr = practicePanel.getCountdownText();
-    auto nextText = practicePanel.getNextRootText();
     if (countdownStr.isNotEmpty()) {
-      nextRootLabel.setText(countdownStr, juce::dontSendNotification);
-      nextRootLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textTertiary));
-      nextRootLabel.setFont(juce::FontOptions(20.0f, juce::Font::bold));
-      nextRootLabel.setJustificationType(juce::Justification::centred);
-      nextRootLabel.setVisible(true);
-    } else if (nextText.isNotEmpty()) {
-      nextRootLabel.setText("Up next...  " + nextText, juce::dontSendNotification);
-      nextRootLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textTertiary));
-      nextRootLabel.setFont(juce::FontOptions(16.0f));
-      nextRootLabel.setJustificationType(juce::Justification::centred);
+      countdownLabel.setText(countdownStr, juce::dontSendNotification);
+      countdownLabel.setVisible(true);
+    } else {
+      countdownLabel.setVisible(false);
+    }
+
+    auto nextText = practicePanel.getNextRootText();
+    if (nextText.isNotEmpty()) {
+      nextRootLabel.setText("Up next: " + nextText, juce::dontSendNotification);
       nextRootLabel.setVisible(true);
     } else {
-      nextRootLabel.setText("", juce::dontSendNotification);
       nextRootLabel.setVisible(false);
     }
   } else {
-    chordDisplayLabel.setFont(juce::FontOptions(36.0f, juce::Font::bold));
+    practiceRootLabel.setVisible(false);
+    countdownLabel.setVisible(false);
     nextRootLabel.setVisible(false);
+  }
 
-    // During playback, show current chord name from the preview
-    auto playbackChord = practicePanel.getPlaybackChordName();
-    if (playbackChord.isNotEmpty()) {
-      chordDisplayLabel.setText(playbackChord, juce::dontSendNotification);
-      chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::accent));
-    } else {
-    // Normal chord display — use last-played notes when keys are released
-    chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textPrimary));
+  // --- Center chord display — ALWAYS shows what's being played/previewed ---
+  chordDisplayLabel.setFont(juce::FontOptions(36.0f, juce::Font::bold));
+  chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textPrimary));
+
+  // Priority: playback chord > clicked chord > keyboard notes > idle
+  auto playbackChord = practicePanel.getPlaybackChordName();
+  auto clickedChord = practicePanel.getClickedChordName();
+  if (playbackChord.isNotEmpty()) {
+    chordDisplayLabel.setText(playbackChord, juce::dontSendNotification);
+    chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::accent));
+  } else if (clickedChord.isNotEmpty()) {
+    chordDisplayLabel.setText(clickedChord, juce::dontSendNotification);
+    chordDisplayLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::accent));
+  } else {
+    // Detect from keyboard notes (played by user or highlighted by playback)
+    uint64_t pLow = processorRef.playbackNotesLow.load(std::memory_order_relaxed);
+    uint64_t pHigh = processorRef.playbackNotesHigh.load(std::memory_order_relaxed);
+    bool hasPlaybackNotes = (pLow != 0 || pHigh != 0)
+        && (processorRef.isPlayingProgression() || processorRef.isPlayingMelody());
+
     auto displayNotes = notes.empty() ? processorRef.getLastPlayedNotes() : notes;
+
+    // During playback with no user input, use playback notes for detection
+    if (displayNotes.empty() && hasPlaybackNotes) {
+      for (int i = 0; i < 64; ++i)
+        if (pLow & (uint64_t(1) << i)) displayNotes.push_back(i);
+      for (int i = 0; i < 64; ++i)
+        if (pHigh & (uint64_t(1) << i)) displayNotes.push_back(i + 64);
+    }
 
     if (displayNotes.empty()) {
       chordDisplayLabel.setText("...", juce::dontSendNotification);
@@ -446,8 +498,10 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
           chordDisplayLabel.setText("...", juce::dontSendNotification);
       }
     }
-    } // end non-playback else
   }
+
+  // Tick down clicked chord display timer
+  practicePanel.tickClickedChord();
 
   // Update recording state machines
   voicingLibraryPanel.updateRecording(notes);
@@ -483,12 +537,18 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
   }
 
   // Update practice mode
-  if (practicePanel.isPracticing()) {
+  bool isPracticing = practicePanel.isPracticing();
+  if (isPracticing) {
     practicePanel.updatePractice(notes);
     voicingLibraryPanel.refreshStatsChart();
     progressionLibraryPanel.refreshStatsChart();
     melodyLibraryPanel.refreshStatsChart();
   }
+
+  // Disable library panel buttons during practice
+  voicingLibraryPanel.setButtonsEnabled(! isPracticing);
+  progressionLibraryPanel.setButtonsEnabled(! isPracticing);
+  melodyLibraryPanel.setButtonsEnabled(! isPracticing);
 
   // Voicing preview auto-off
   if (previewFramesRemaining > 0) {

@@ -36,6 +36,8 @@ private:
   // Chord display
   juce::Label chordDisplayLabel;
   juce::Label nextRootLabel;
+  juce::Label practiceRootLabel;   // practice target root (left side)
+  juce::Label countdownLabel;      // countdown (below practice root)
 
   // Keyboard
   ChordyKeyboardComponent keyboard;

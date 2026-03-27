@@ -527,8 +527,19 @@ void ProgressionLibraryPanel::enterIdle()
     progressionList.updateContent();
 }
 
+void ProgressionLibraryPanel::setButtonsEnabled (bool enabled)
+{
+    recordButton.setEnabled (enabled);
+    playButton.setEnabled (enabled);
+    editButton.setEnabled (enabled);
+    deleteButton.setEnabled (enabled);
+}
+
 void ProgressionLibraryPanel::enterCountIn()
 {
+    if (onRecordStarted)
+        onRecordStarted();
+
     panelState = PanelState::CountIn;
     countInBeatsElapsed = 0;
     lastCountInBeat = -1;

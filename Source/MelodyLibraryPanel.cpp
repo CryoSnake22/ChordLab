@@ -488,8 +488,19 @@ void MelodyLibraryPanel::enterIdle()
     melodyList.updateContent();
 }
 
+void MelodyLibraryPanel::setButtonsEnabled (bool enabled)
+{
+    recordButton.setEnabled (enabled);
+    playButton.setEnabled (enabled);
+    editButton.setEnabled (enabled);
+    deleteButton.setEnabled (enabled);
+}
+
 void MelodyLibraryPanel::enterCountIn()
 {
+    if (onRecordStarted)
+        onRecordStarted();
+
     panelState = PanelState::CountIn;
     countInBeatsElapsed = 0;
     lastCountInBeat = -1;

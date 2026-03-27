@@ -60,6 +60,10 @@ public:
     void showProgressionCursor (double beat);
     void showMelodyCursor (double beat);
     juce::String getPlaybackChordName() const;
+    juce::String getClickedChordName() const { return clickedChordName; }
+    void setClickedChordName (const juce::String& name, int frames = 60) { clickedChordName = name; clickedChordFrames = frames; }
+    void clearClickedChordName() { clickedChordName = {}; clickedChordFrames = 0; }
+    void tickClickedChord() { if (clickedChordFrames > 0 && --clickedChordFrames == 0) clickedChordName = {}; }
 
 private:
     juce::String selectedVoicingId;
@@ -72,6 +76,8 @@ private:
     juce::Colour currentRootColour { juce::Colours::white };
     juce::String nextRootText;
     juce::String countdownText;
+    juce::String clickedChordName;
+    int clickedChordFrames = 0;
     AudioPluginAudioProcessor& processorRef;
     ChordyKeyboardComponent& keyboardRef;
 

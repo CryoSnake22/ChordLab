@@ -115,6 +115,10 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
             processorRef.addPreviewMidi (juce::MidiMessage::noteOn (ch, chord.midiNotes[i], vel));
         }
 
+        // Show chord name in top display
+        clickedChordName = chord.getDisplayName();
+        clickedChordFrames = 60; // ~1 second at 60Hz
+
         // Highlight keyboard
         keyboardRef.clearAllColours();
         for (int note : chord.midiNotes)
@@ -145,6 +149,10 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
         int ch = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
         float vel = note.velocity > 0 ? static_cast<float> (note.velocity) / 127.0f : 0.7f;
         processorRef.addPreviewMidi (juce::MidiMessage::noteOn (ch, midiNote, vel));
+
+        // Show note name in top display
+        clickedChordName = ChordDetector::noteNameFromPitchClass (midiNote % 12);
+        clickedChordFrames = 40; // ~0.7s
 
         // Highlight keyboard
         keyboardRef.clearAllColours();
