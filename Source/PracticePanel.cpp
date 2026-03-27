@@ -100,8 +100,13 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
 
         const auto& chord = previewProgression.chords[static_cast<size_t> (chordIdx)];
         int ch = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
-        for (int note : chord.midiNotes)
-            processorRef.addPreviewMidi (juce::MidiMessage::noteOn (ch, note, 0.7f));
+        for (size_t i = 0; i < chord.midiNotes.size(); ++i)
+        {
+            float vel = (i < chord.midiVelocities.size() && chord.midiVelocities[i] > 0)
+                ? static_cast<float> (chord.midiVelocities[i]) / 127.0f
+                : 0.7f;
+            processorRef.addPreviewMidi (juce::MidiMessage::noteOn (ch, chord.midiNotes[i], vel));
+        }
 
         // Highlight keyboard
         keyboardRef.clearAllColours();
