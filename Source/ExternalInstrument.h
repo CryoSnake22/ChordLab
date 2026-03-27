@@ -52,15 +52,25 @@ private:
     juce::AudioPluginFormatManager formatManager;
     juce::KnownPluginList pluginList;
 
-    juce::SpinLock pluginLock;
+    juce::CriticalSection pluginLock;
     std::unique_ptr<juce::AudioPluginInstance> hostedPlugin;
 
     double currentSampleRate = 44100.0;
     int currentBlockSize = 512;
     bool scanning = false;
 
+    // Load generation counter to discard stale async callbacks
+    int loadGeneration = 0;
+
+    // Bus layout matching for hosted plugin
+    int hostedPluginNumChannels = 0;
+    juce::AudioBuffer<float> pluginBuffer;
+
+    void setupPluginBuses (juce::AudioPluginInstance& instance);
+
     juce::File getPluginListCacheFile() const;
     juce::File getDeadMansPedalFile() const;
+    juce::File getLoadingPedalFile() const;
     void loadPluginListCache();
     void savePluginListCache();
 };

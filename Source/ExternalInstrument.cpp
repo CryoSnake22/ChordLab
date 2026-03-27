@@ -26,107 +26,150 @@ void ExternalInstrument::prepare (double sampleRate, int samplesPerBlock)
     currentSampleRate = sampleRate;
     currentBlockSize = samplesPerBlock;
 
-    juce::SpinLock::ScopedLockType lock (pluginLock);
+    // Pre-allocate scratch buffer for channel mismatch path
+    pluginBuffer.setSize (2, samplesPerBlock);
+
+    const juce::ScopedLock sl (pluginLock);
     if (hostedPlugin != nullptr)
         hostedPlugin->prepareToPlay (sampleRate, samplesPerBlock);
 }
 
 void ExternalInstrument::release()
 {
-    juce::SpinLock::ScopedLockType lock (pluginLock);
+    const juce::ScopedLock sl (pluginLock);
     if (hostedPlugin != nullptr)
         hostedPlugin->releaseResources();
 }
 
 bool ExternalInstrument::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midi)
 {
-    juce::SpinLock::ScopedTryLockType lock (pluginLock);
-    if (! lock.isLocked() || hostedPlugin == nullptr)
+    const juce::ScopedTryLock sl (pluginLock);
+    if (! sl.isLocked() || hostedPlugin == nullptr)
         return false;
 
-    hostedPlugin->processBlock (buffer, midi);
+    int hostChannels = buffer.getNumChannels();
+    int pluginChannels = hostedPluginNumChannels;
+
+    if (pluginChannels <= 0 || pluginChannels == hostChannels)
+    {
+        // Fast path: direct passthrough (zero overhead)
+        hostedPlugin->processBlock (buffer, midi);
+    }
+    else
+    {
+        // Channel mismatch: use scratch buffer
+        int numSamples = buffer.getNumSamples();
+        pluginBuffer.setSize (pluginChannels, numSamples, false, false, true);
+        pluginBuffer.clear();
+
+        int channelsToCopy = juce::jmin (hostChannels, pluginChannels);
+        for (int ch = 0; ch < channelsToCopy; ++ch)
+            pluginBuffer.copyFrom (ch, 0, buffer, ch, 0, numSamples);
+
+        hostedPlugin->processBlock (pluginBuffer, midi);
+
+        buffer.clear();
+        channelsToCopy = juce::jmin (hostChannels, pluginChannels);
+        for (int ch = 0; ch < channelsToCopy; ++ch)
+            buffer.copyFrom (ch, 0, pluginBuffer, ch, 0, numSamples);
+
+        // If plugin is mono but host is stereo, duplicate mono to both channels
+        if (pluginChannels == 1 && hostChannels >= 2)
+            buffer.copyFrom (1, 0, buffer, 0, 0, numSamples);
+    }
+
     return true;
+}
+
+void ExternalInstrument::setupPluginBuses (juce::AudioPluginInstance& instance)
+{
+    // Try stereo in/out first (most common for instruments)
+    auto stereoLayout = juce::AudioProcessor::BusesLayout();
+    stereoLayout.inputBuses.add (juce::AudioChannelSet::stereo());
+    stereoLayout.outputBuses.add (juce::AudioChannelSet::stereo());
+
+    if (instance.setBusesLayout (stereoLayout))
+    {
+        hostedPluginNumChannels = instance.getTotalNumOutputChannels();
+        return;
+    }
+
+    // Try stereo output only (no input bus -- common for synth instruments)
+    auto stereoOutLayout = juce::AudioProcessor::BusesLayout();
+    stereoOutLayout.outputBuses.add (juce::AudioChannelSet::stereo());
+
+    if (instance.setBusesLayout (stereoOutLayout))
+    {
+        hostedPluginNumChannels = instance.getTotalNumOutputChannels();
+        return;
+    }
+
+    // Accept the plugin's default layout
+    hostedPluginNumChannels = instance.getTotalNumOutputChannels();
 }
 
 void ExternalInstrument::loadPlugin (const juce::PluginDescription& desc)
 {
-    // Clear any existing plugin first to free resources
     clearPlugin();
+    int myGeneration = ++loadGeneration;
 
-    auto sr = currentSampleRate;
-    auto bs = currentBlockSize;
-    auto* self = this;
-    auto descCopy = desc;
+    // Write loading pedal before attempting (crash protection for SIGSEGV)
+    getLoadingPedalFile().replaceWithText (desc.name);
 
-    // Load on a background thread to avoid blocking the message thread.
-    // Some heavy plugins (Keyscape, Kontakt) do significant work during init.
-    juce::Thread::launch ([self, descCopy, sr, bs]
-    {
-        juce::String errorMessage;
-        std::unique_ptr<juce::AudioPluginInstance> instance;
-
-        try
+    formatManager.createPluginInstanceAsync (
+        desc, currentSampleRate, currentBlockSize,
+        [this, myGeneration] (std::unique_ptr<juce::AudioPluginInstance> instance,
+                               const juce::String& error)
         {
-            instance = self->formatManager.createPluginInstance (
-                descCopy, sr, bs, errorMessage);
-        }
-        catch (...)
-        {
-            errorMessage = "Plugin threw an exception during loading";
-        }
+            if (myGeneration != loadGeneration)
+                return;  // stale load, a newer one was initiated
 
-        if (instance == nullptr)
-        {
-            DBG ("Failed to load plugin: " + errorMessage);
-            juce::MessageManager::callAsync ([self, errorMessage]
+            if (instance == nullptr)
             {
-                if (self->onPluginLoadFailed)
-                    self->onPluginLoadFailed (errorMessage);
-            });
-            return;
-        }
-
-        try
-        {
-            instance->prepareToPlay (sr, bs);
-        }
-        catch (...)
-        {
-            DBG ("Plugin threw an exception during prepareToPlay");
-            juce::MessageManager::callAsync ([self]
-            {
-                if (self->onPluginLoadFailed)
-                    self->onPluginLoadFailed ("Plugin crashed during preparation");
-            });
-            return;
-        }
-
-        // Transfer ownership to message thread via raw pointer
-        auto* rawInstance = instance.release();
-
-        juce::MessageManager::callAsync ([self, rawInstance]
-        {
-            {
-                juce::SpinLock::ScopedLockType lock (self->pluginLock);
-                self->hostedPlugin.reset (rawInstance);
+                DBG ("Failed to load plugin: " + error);
+                getLoadingPedalFile().deleteFile();
+                if (onPluginLoadFailed)
+                    onPluginLoadFailed (error);
+                return;
             }
 
-            DBG ("Loaded plugin: " + self->hostedPlugin->getName());
+            try
+            {
+                setupPluginBuses (*instance);
+                instance->setRateAndBufferSizeDetails (currentSampleRate, currentBlockSize);
+                instance->prepareToPlay (currentSampleRate, currentBlockSize);
+            }
+            catch (...)
+            {
+                DBG ("Plugin threw an exception during prepareToPlay");
+                getLoadingPedalFile().deleteFile();
+                if (onPluginLoadFailed)
+                    onPluginLoadFailed ("Plugin crashed during preparation");
+                return;
+            }
 
-            if (self->onPluginLoaded)
-                self->onPluginLoaded();
+            {
+                const juce::ScopedLock sl (pluginLock);
+                hostedPlugin = std::move (instance);
+            }
+
+            getLoadingPedalFile().deleteFile();
+            DBG ("Loaded plugin: " + hostedPlugin->getName());
+
+            if (onPluginLoaded)
+                onPluginLoaded();
         });
-    });
 }
 
 void ExternalInstrument::clearPlugin()
 {
-    juce::SpinLock::ScopedLockType lock (pluginLock);
+    const juce::ScopedLock sl (pluginLock);
     if (hostedPlugin != nullptr)
     {
         hostedPlugin->releaseResources();
         hostedPlugin.reset();
     }
+    hostedPluginNumChannels = 0;
 }
 
 bool ExternalInstrument::isPluginLoaded() const
@@ -151,7 +194,7 @@ juce::Array<juce::PluginDescription> ExternalInstrument::getAvailableInstruments
         if (! desc.isInstrument)
             continue;
 
-        // Deduplicate by name — prefer VST3 over AU
+        // Deduplicate by name -- prefer VST3 over AU
         int existingIdx = seenNames.indexOf (desc.name);
         if (existingIdx >= 0)
         {
@@ -246,36 +289,82 @@ void ExternalInstrument::restoreFromStateXml (const juce::XmlElement& xml,
     if (! desc.loadFromXml (*descXml))
         return;
 
-    // Load the plugin
-    juce::String errorMessage;
-    auto instance = formatManager.createPluginInstance (
-        desc, currentSampleRate, currentBlockSize, errorMessage);
-
-    if (instance == nullptr)
+    // Check loading dead-mans-pedal: if this plugin crashed last time, skip it
+    auto loadingPedal = getLoadingPedalFile();
+    if (loadingPedal.existsAsFile())
     {
-        DBG ("Failed to restore plugin: " + errorMessage);
-        return;
+        auto crashedPlugin = loadingPedal.loadFileAsString().trim();
+        if (crashedPlugin == desc.name)
+        {
+            DBG ("Skipping plugin that previously crashed during loading: " + desc.name);
+            loadingPedal.deleteFile();
+            if (onPluginLoadFailed)
+                onPluginLoadFailed ("Plugin '" + desc.name + "' previously crashed and was blocked. Select it again to retry.");
+            return;
+        }
+        // Different plugin -- previous crash was from something else, clear it
+        loadingPedal.deleteFile();
     }
 
-    // Restore plugin state
+    // Save pending state data for application after async load
+    juce::MemoryBlock savedState;
     auto stateBase64 = xml.getStringAttribute ("pluginState");
     if (stateBase64.isNotEmpty())
-    {
-        juce::MemoryBlock stateData;
-        stateData.fromBase64Encoding (stateBase64);
-        instance->setStateInformation (stateData.getData(),
-                                        static_cast<int> (stateData.getSize()));
-    }
+        savedState.fromBase64Encoding (stateBase64);
 
-    instance->prepareToPlay (currentSampleRate, currentBlockSize);
+    int myGeneration = ++loadGeneration;
 
-    {
-        juce::SpinLock::ScopedLockType lock (pluginLock);
-        hostedPlugin = std::move (instance);
-    }
+    // Write loading pedal before attempting (crash protection for SIGSEGV)
+    loadingPedal.replaceWithText (desc.name);
 
-    if (onPluginLoaded)
-        onPluginLoaded();
+    formatManager.createPluginInstanceAsync (
+        desc, currentSampleRate, currentBlockSize,
+        [this, myGeneration, pendingState = std::move (savedState)]
+        (std::unique_ptr<juce::AudioPluginInstance> instance, const juce::String& error)
+        {
+            if (myGeneration != loadGeneration)
+                return;  // stale load
+
+            if (instance == nullptr)
+            {
+                DBG ("Failed to restore plugin: " + error);
+                getLoadingPedalFile().deleteFile();
+                if (onPluginLoadFailed)
+                    onPluginLoadFailed (error);
+                return;
+            }
+
+            try
+            {
+                // Restore plugin state before prepareToPlay
+                if (! pendingState.isEmpty())
+                    instance->setStateInformation (pendingState.getData(),
+                                                    static_cast<int> (pendingState.getSize()));
+
+                setupPluginBuses (*instance);
+                instance->setRateAndBufferSizeDetails (currentSampleRate, currentBlockSize);
+                instance->prepareToPlay (currentSampleRate, currentBlockSize);
+            }
+            catch (...)
+            {
+                DBG ("Plugin threw during restore/prepare");
+                getLoadingPedalFile().deleteFile();
+                if (onPluginLoadFailed)
+                    onPluginLoadFailed ("Plugin crashed during state restoration");
+                return;
+            }
+
+            {
+                const juce::ScopedLock sl (pluginLock);
+                hostedPlugin = std::move (instance);
+            }
+
+            getLoadingPedalFile().deleteFile();
+            DBG ("Restored plugin: " + hostedPlugin->getName());
+
+            if (onPluginLoaded)
+                onPluginLoaded();
+        });
 }
 
 //==============================================================================
@@ -300,6 +389,15 @@ juce::File ExternalInstrument::getDeadMansPedalFile() const
     return appDataDir.getChildFile ("deadMansPedal.txt");
 }
 
+juce::File ExternalInstrument::getLoadingPedalFile() const
+{
+    auto appDataDir = juce::File::getSpecialLocation (
+        juce::File::userApplicationDataDirectory)
+        .getChildFile ("Chordy");
+    appDataDir.createDirectory();
+    return appDataDir.getChildFile ("loadingPlugin.txt");
+}
+
 void ExternalInstrument::loadPluginListCache()
 {
     auto file = getPluginListCacheFile();
@@ -320,4 +418,3 @@ void ExternalInstrument::savePluginListCache()
         xml->writeTo (file);
     }
 }
-

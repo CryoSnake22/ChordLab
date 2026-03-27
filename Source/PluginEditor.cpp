@@ -196,6 +196,9 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   };
 
   processorRef.externalInstrument.onPluginLoaded = [this] {
+    // Close stale editor window before updating (prevents dangling pointer)
+    closePluginEditor();
+
     auto name = processorRef.externalInstrument.getPluginName();
     for (int i = 0; i < pluginSelector.getNumItems(); ++i)
     {
