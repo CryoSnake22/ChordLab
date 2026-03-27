@@ -335,8 +335,16 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
     internalSynth.renderNextBlock(buffer, midiMessages, 0, buffer.getNumSamples());
   } else {
     // External mode: route to hosted plugin if available, otherwise silence
-    if (! externalInstrument.processBlock(buffer, midiMessages))
+    if (externalInstrument.processBlock(buffer, midiMessages))
+    {
+      // Apply volume slider to hosted plugin output
+      float vol = *apvts.getRawParameterValue("synthVolume");
+      buffer.applyGain(vol);
+    }
+    else
+    {
       buffer.clear();
+    }
   }
 
   // Advance tempo engine — renders metronome click into buffer

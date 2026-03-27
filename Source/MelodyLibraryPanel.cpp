@@ -138,6 +138,9 @@ MelodyLibraryPanel::MelodyLibraryPanel (AudioPluginAudioProcessor& processor)
         btn.onClick = [this, res] { applyQuantize (res); };
         addChildComponent (btn);
     };
+    quantRawBtn.onClick = [this] { applyQuantize (0.0); };
+    addChildComponent (quantRawBtn);
+
     quantBtnSetup (quantBeatBtn, 1.0);
     quantBtnSetup (quantHalfBtn, 0.5);
     quantBtnSetup (quantQuarterBtn, 0.25);
@@ -289,7 +292,9 @@ void MelodyLibraryPanel::layoutEditMode (juce::Rectangle<int> area)
 
     // Quantize buttons row
     auto quantRow = area.removeFromTop (24);
-    int btnW = (quantRow.getWidth() - 8) / 3;
+    int btnW = (quantRow.getWidth() - 12) / 4;
+    quantRawBtn.setBounds (quantRow.removeFromLeft (btnW));
+    quantRow.removeFromLeft (4);
     quantBeatBtn.setBounds (quantRow.removeFromLeft (btnW));
     quantRow.removeFromLeft (4);
     quantHalfBtn.setBounds (quantRow.removeFromLeft (btnW));
@@ -382,6 +387,7 @@ void MelodyLibraryPanel::setEditModeVisible (bool v)
 {
     editHeader.setVisible (v);
     editChart.setVisible (v);
+    quantRawBtn.setVisible (v);
     quantBeatBtn.setVisible (v);
     quantHalfBtn.setVisible (v);
     quantQuarterBtn.setVisible (v);
@@ -488,6 +494,7 @@ void MelodyLibraryPanel::enterEditing()
     if (auto* param = processorRef.apvts.getParameter ("metronomeOn"))
         param->setValueNotifyingHost (0.0f);
 
+    quantRawBtn.setToggleState (currentQuantizeResolution == 0.0, juce::dontSendNotification);
     quantBeatBtn.setToggleState (currentQuantizeResolution == 1.0, juce::dontSendNotification);
     quantHalfBtn.setToggleState (currentQuantizeResolution == 0.5, juce::dontSendNotification);
     quantQuarterBtn.setToggleState (currentQuantizeResolution == 0.25, juce::dontSendNotification);
@@ -607,9 +614,9 @@ void MelodyLibraryPanel::onStopRecording()
     pendingMelody.rawMidi = rawMidi;
     pendingMelody.keyPitchClass = 0; // C initially, user adjusts in confirming
 
-    // Quantize notes
-    currentQuantizeResolution = 0.5;
-    pendingMelody.notes = MelodyLibrary::quantizeMelodyNotes (melodyNotes, currentQuantizeResolution);
+    // Default to raw (no quantization) — user can quantize in editing step
+    currentQuantizeResolution = 0.0;
+    pendingMelody.notes = melodyNotes;
 
     // Recompute totalBeats from quantized notes
     double maxEnd = 0.0;
@@ -633,16 +640,21 @@ void MelodyLibraryPanel::applyQuantize (double resolution)
 {
     currentQuantizeResolution = resolution;
 
-    // Always re-analyze from the original raw MIDI recording, then quantize fresh.
-    // This preserves the original performance — quantizing to "Beat" won't destroy detail.
+    // Always re-analyze from the original raw MIDI recording.
     auto freshNotes = MelodyLibrary::analyzeMelodyNotes (pendingMelody.rawMidi, analysisKeyRootMidi);
-    pendingMelody.notes = MelodyLibrary::quantizeMelodyNotes (freshNotes, resolution);
+
+    // Raw (0.0) = keep exact timing, otherwise quantize to grid
+    if (resolution > 0.0)
+        pendingMelody.notes = MelodyLibrary::quantizeMelodyNotes (freshNotes, resolution);
+    else
+        pendingMelody.notes = freshNotes;
 
     double maxEnd = 0.0;
     for (const auto& n : pendingMelody.notes)
         maxEnd = juce::jmax (maxEnd, n.startBeat + n.durationBeats);
     pendingMelody.totalBeats = juce::jmax (pendingMelody.totalBeats, maxEnd);
 
+    quantRawBtn.setToggleState (resolution == 0.0, juce::dontSendNotification);
     quantBeatBtn.setToggleState (resolution == 1.0, juce::dontSendNotification);
     quantHalfBtn.setToggleState (resolution == 0.5, juce::dontSendNotification);
     quantQuarterBtn.setToggleState (resolution == 0.25, juce::dontSendNotification);

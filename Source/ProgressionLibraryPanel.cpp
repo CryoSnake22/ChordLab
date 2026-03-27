@@ -133,6 +133,9 @@ ProgressionLibraryPanel::ProgressionLibraryPanel (AudioPluginAudioProcessor& pro
         btn.onClick = [this, res] { applyQuantize (res); };
         addChildComponent (btn);
     };
+    quantRawBtn.onClick = [this] { applyQuantize (0.0); };
+    addChildComponent (quantRawBtn);
+
     quantBtnSetup (quantBeatBtn, 1.0);
     quantBtnSetup (quantHalfBtn, 0.5);
     quantBtnSetup (quantQuarterBtn, 0.25);
@@ -333,7 +336,9 @@ void ProgressionLibraryPanel::layoutEditMode (juce::Rectangle<int> area)
 
     // Quantize + play buttons row
     auto quantRow = area.removeFromTop (24);
-    int btnW = (quantRow.getWidth() - 16) / 4;
+    int btnW = (quantRow.getWidth() - 20) / 5;
+    quantRawBtn.setBounds (quantRow.removeFromLeft (btnW));
+    quantRow.removeFromLeft (4);
     quantBeatBtn.setBounds (quantRow.removeFromLeft (btnW));
     quantRow.removeFromLeft (4);
     quantHalfBtn.setBounds (quantRow.removeFromLeft (btnW));
@@ -436,6 +441,7 @@ void ProgressionLibraryPanel::setEditModeVisible (bool v)
 {
     editHeader.setVisible (v);
     editChart.setVisible (v);
+    quantRawBtn.setVisible (v);
     quantBeatBtn.setVisible (v);
     quantHalfBtn.setVisible (v);
     quantQuarterBtn.setVisible (v);
@@ -550,6 +556,7 @@ void ProgressionLibraryPanel::enterEditing()
     if (auto* param = processorRef.apvts.getParameter ("metronomeOn"))
         param->setValueNotifyingHost (0.0f);
 
+    quantRawBtn.setToggleState (currentQuantizeResolution == 0.0, juce::dontSendNotification);
     quantBeatBtn.setToggleState (currentQuantizeResolution == 1.0, juce::dontSendNotification);
     quantHalfBtn.setToggleState (currentQuantizeResolution == 0.5, juce::dontSendNotification);
     quantQuarterBtn.setToggleState (currentQuantizeResolution == 0.25, juce::dontSendNotification);
@@ -705,15 +712,27 @@ void ProgressionLibraryPanel::applyQuantize (double resolution)
     processorRef.stopProgressionPlayback();
     currentQuantizeResolution = resolution;
 
-    // Re-quantize the current edited chords (preserves name/root/quality edits)
-    pendingProgression.chords = ProgressionRecorder::quantize (
-        pendingProgression.chords, resolution, pendingProgression.totalBeats);
+    if (resolution > 0.0)
+    {
+        // Re-analyze from raw MIDI then quantize (non-destructive)
+        auto freshChords = ProgressionRecorder::analyzeChordChanges (
+            pendingProgression.rawMidi, &processorRef.voicingLibrary);
+        pendingProgression.chords = ProgressionRecorder::quantize (
+            freshChords, resolution, pendingProgression.totalBeats);
+    }
+    else
+    {
+        // Raw: re-analyze from raw MIDI with no quantization
+        pendingProgression.chords = ProgressionRecorder::analyzeChordChanges (
+            pendingProgression.rawMidi, &processorRef.voicingLibrary);
+    }
 
     double maxEnd = 0.0;
     for (const auto& c : pendingProgression.chords)
         maxEnd = juce::jmax (maxEnd, c.startBeat + c.durationBeats);
     pendingProgression.totalBeats = juce::jmax (pendingProgression.totalBeats, maxEnd);
 
+    quantRawBtn.setToggleState (resolution == 0.0, juce::dontSendNotification);
     quantBeatBtn.setToggleState (resolution == 1.0, juce::dontSendNotification);
     quantHalfBtn.setToggleState (resolution == 0.5, juce::dontSendNotification);
     quantQuarterBtn.setToggleState (resolution == 0.25, juce::dontSendNotification);

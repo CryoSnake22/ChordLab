@@ -56,6 +56,7 @@ private:
     // --- Editing mode ---
     juce::Label editHeader;
     MelodyChartComponent editChart;
+    juce::TextButton quantRawBtn { "Raw" };
     juce::TextButton quantBeatBtn { "Beat" };
     juce::TextButton quantHalfBtn { "1/2" };
     juce::TextButton quantQuarterBtn { "1/4" };
