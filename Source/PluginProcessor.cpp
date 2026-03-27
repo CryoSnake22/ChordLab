@@ -1,5 +1,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
+#include <algorithm>
 
 //==============================================================================
 juce::AudioProcessorValueTreeState::ParameterLayout
@@ -190,87 +191,67 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   if (progressionRecorder.isRecording())
     progressionRecorder.processBlock(midiMessages, buffer.getNumSamples());
 
-  // Progression playback — inject chord MIDI events based on beat position
+  // Progression playback — replay raw MIDI directly
   if (playbackActive.load(std::memory_order_relaxed)) {
     double bpm = *apvts.getRawParameterValue("bpm");
     double samplesPerBeat = getSampleRate() * 60.0 / bpm;
-    int midiCh = channel;
 
     for (int s = 0; s < buffer.getNumSamples(); ++s) {
       double beat = playbackSamplePos / samplesPerBeat;
       playbackBeat.store(beat, std::memory_order_relaxed);
 
-      // Find which chord should be active at this beat
-      int targetChord = -1;
-      for (int ci = 0; ci < static_cast<int>(playbackProgression.chords.size()); ++ci) {
-        const auto& c = playbackProgression.chords[static_cast<size_t>(ci)];
-        if (beat >= c.startBeat && beat < c.startBeat + c.durationBeats) {
-          targetChord = ci;
-          break;
-        }
-      }
-
       // End of progression
       if (beat >= playbackProgression.totalBeats) {
+        // Send all-notes-off + pedal off
+        int ch = channel;
+        addPreviewMidi(juce::MidiMessage::controllerEvent(ch, 64, 0));
         for (int n : playbackActiveNotes)
-          midiMessages.addEvent(juce::MidiMessage::noteOff(midiCh, n), s);
+          midiMessages.addEvent(juce::MidiMessage::noteOff(ch, n), s);
         playbackActiveNotes.clear();
-        playbackChordIndex = -1;
         playbackActive.store(false, std::memory_order_relaxed);
         playbackNotesLow.store(0, std::memory_order_relaxed);
         playbackNotesHigh.store(0, std::memory_order_relaxed);
         break;
       }
 
-      // Chord changed — send note-offs then note-ons
-      if (targetChord != playbackChordIndex) {
-        for (int n : playbackActiveNotes)
-          midiMessages.addEvent(juce::MidiMessage::noteOff(midiCh, n), s);
-        playbackActiveNotes.clear();
-        playbackChordIndex = targetChord;
-
-        if (targetChord >= 0) {
-          const auto& c = playbackProgression.chords[static_cast<size_t>(targetChord)];
-          for (size_t ni = 0; ni < c.midiNotes.size(); ++ni) {
-            int n = c.midiNotes[ni];
-            float vel = (ni < c.midiVelocities.size())
-                ? static_cast<float>(c.midiVelocities[ni]) / 127.0f
-                : 0.7f;
-            midiMessages.addEvent(juce::MidiMessage::noteOn(midiCh, n, vel), s);
-            playbackActiveNotes.push_back(n);
-          }
-        }
-
-        // Update playback notes bitfield for GUI keyboard highlighting
-        uint64_t pLow = 0, pHigh = 0;
-        for (int n : playbackActiveNotes) {
-          if (n < 64) pLow |= (uint64_t(1) << n);
-          else        pHigh |= (uint64_t(1) << (n - 64));
-        }
-        playbackNotesLow.store(pLow, std::memory_order_relaxed);
-        playbackNotesHigh.store(pHigh, std::memory_order_relaxed);
-      }
-
-      // Inject CC events (pedal, etc.) from rawMidi at the correct beat positions
+      // Inject all raw MIDI events whose beat timestamp has been reached
       while (playbackCCIndex < playbackProgression.rawMidi.getNumEvents())
       {
         auto* evt = playbackProgression.rawMidi.getEventPointer(playbackCCIndex);
         if (evt->message.getTimeStamp() > beat)
           break;
-        if (evt->message.isController())
-          midiMessages.addEvent(evt->message, s);
+
+        auto msg = evt->message;
+        midiMessages.addEvent(msg, s);
+
+        // Track active notes for keyboard highlighting
+        if (msg.isNoteOn() && msg.getVelocity() > 0)
+          playbackActiveNotes.push_back(msg.getNoteNumber());
+        else if (msg.isNoteOff() || (msg.isNoteOn() && msg.getVelocity() == 0))
+          playbackActiveNotes.erase(
+            std::remove(playbackActiveNotes.begin(), playbackActiveNotes.end(), msg.getNoteNumber()),
+            playbackActiveNotes.end());
+
         playbackCCIndex++;
       }
+
+      // Update keyboard highlighting from active notes
+      uint64_t pLow = 0, pHigh = 0;
+      for (int n : playbackActiveNotes) {
+        if (n < 64) pLow |= (uint64_t(1) << n);
+        else        pHigh |= (uint64_t(1) << (n - 64));
+      }
+      playbackNotesLow.store(pLow, std::memory_order_relaxed);
+      playbackNotesHigh.store(pHigh, std::memory_order_relaxed);
 
       playbackSamplePos += 1.0;
     }
   }
 
-  // Melody playback — inject individual note MIDI events based on beat position
+  // Melody playback — replay raw MIDI directly
   if (melodyPlaybackActive.load(std::memory_order_relaxed)) {
     double bpm = *apvts.getRawParameterValue("bpm");
     double samplesPerBeat = getSampleRate() * 60.0 / bpm;
-    int midiCh = channel;
 
     for (int s = 0; s < buffer.getNumSamples(); ++s) {
       double beat = melodyPlaybackSamplePos / samplesPerBeat;
@@ -278,8 +259,10 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
 
       // End of melody
       if (beat >= melodyPlaybackData.totalBeats) {
+        int ch = channel;
+        addPreviewMidi(juce::MidiMessage::controllerEvent(ch, 64, 0));
         if (melodyPlaybackActiveNote >= 0) {
-          midiMessages.addEvent(juce::MidiMessage::noteOff(midiCh, melodyPlaybackActiveNote), s);
+          midiMessages.addEvent(juce::MidiMessage::noteOff(ch, melodyPlaybackActiveNote), s);
           melodyPlaybackActiveNote = -1;
         }
         melodyPlaybackActive.store(false, std::memory_order_relaxed);
@@ -288,56 +271,36 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
         break;
       }
 
-      // Find which note should be active at this beat
-      int targetNote = -1;
-      for (int ni = 0; ni < static_cast<int>(melodyPlaybackData.notes.size()); ++ni) {
-        const auto& n = melodyPlaybackData.notes[static_cast<size_t>(ni)];
-        if (beat >= n.startBeat && beat < n.startBeat + n.durationBeats) {
-          targetNote = ni;
-          break;
-        }
-      }
-
-      if (targetNote != melodyPlaybackNoteIndex) {
-        // Note off for previous note
-        if (melodyPlaybackActiveNote >= 0) {
-          midiMessages.addEvent(juce::MidiMessage::noteOff(midiCh, melodyPlaybackActiveNote), s);
-          melodyPlaybackActiveNote = -1;
-        }
-
-        melodyPlaybackNoteIndex = targetNote;
-
-        // Note on for new note
-        if (targetNote >= 0) {
-          const auto& n = melodyPlaybackData.notes[static_cast<size_t>(targetNote)];
-          int midiNote = melodyPlaybackKeyRoot + n.intervalFromKeyRoot;
-          if (midiNote >= 0 && midiNote < 128) {
-            float vel = static_cast<float>(n.velocity) / 127.0f;
-            midiMessages.addEvent(juce::MidiMessage::noteOn(midiCh, midiNote, vel), s);
-            melodyPlaybackActiveNote = midiNote;
-          }
-        }
-
-        // Update keyboard highlighting
-        uint64_t pLow = 0, pHigh = 0;
-        if (melodyPlaybackActiveNote >= 0) {
-          if (melodyPlaybackActiveNote < 64) pLow |= (uint64_t(1) << melodyPlaybackActiveNote);
-          else pHigh |= (uint64_t(1) << (melodyPlaybackActiveNote - 64));
-        }
-        playbackNotesLow.store(pLow, std::memory_order_relaxed);
-        playbackNotesHigh.store(pHigh, std::memory_order_relaxed);
-      }
-
-      // Inject CC events (pedal, etc.) from rawMidi at the correct beat positions
+      // Inject all raw MIDI events whose beat timestamp has been reached
       while (melodyPlaybackCCIndex < melodyPlaybackData.rawMidi.getNumEvents())
       {
         auto* evt = melodyPlaybackData.rawMidi.getEventPointer(melodyPlaybackCCIndex);
         if (evt->message.getTimeStamp() > beat)
           break;
-        if (evt->message.isController())
-          midiMessages.addEvent(evt->message, s);
+
+        auto msg = evt->message;
+        midiMessages.addEvent(msg, s);
+
+        // Track active note for keyboard highlighting
+        if (msg.isNoteOn() && msg.getVelocity() > 0)
+          melodyPlaybackActiveNote = msg.getNoteNumber();
+        else if (msg.isNoteOff() || (msg.isNoteOn() && msg.getVelocity() == 0))
+        {
+          if (msg.getNoteNumber() == melodyPlaybackActiveNote)
+            melodyPlaybackActiveNote = -1;
+        }
+
         melodyPlaybackCCIndex++;
       }
+
+      // Update keyboard highlighting
+      uint64_t pLow = 0, pHigh = 0;
+      if (melodyPlaybackActiveNote >= 0) {
+        if (melodyPlaybackActiveNote < 64) pLow |= (uint64_t(1) << melodyPlaybackActiveNote);
+        else pHigh |= (uint64_t(1) << (melodyPlaybackActiveNote - 64));
+      }
+      playbackNotesLow.store(pLow, std::memory_order_relaxed);
+      playbackNotesHigh.store(pHigh, std::memory_order_relaxed);
 
       melodyPlaybackSamplePos += 1.0;
     }
