@@ -379,9 +379,20 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
                                  practicePanel.getCurrentRootColour());
     chordDisplayLabel.setFont(juce::FontOptions(48.0f, juce::Font::bold));
 
+    // Show countdown on the "up next" line (smaller, darker) during count-in
+    auto countdownStr = practicePanel.getCountdownText();
     auto nextText = practicePanel.getNextRootText();
-    if (nextText.isNotEmpty()) {
+    if (countdownStr.isNotEmpty()) {
+      nextRootLabel.setText(countdownStr, juce::dontSendNotification);
+      nextRootLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textTertiary));
+      nextRootLabel.setFont(juce::FontOptions(20.0f, juce::Font::bold));
+      nextRootLabel.setJustificationType(juce::Justification::centred);
+      nextRootLabel.setVisible(true);
+    } else if (nextText.isNotEmpty()) {
       nextRootLabel.setText("Up next...  " + nextText, juce::dontSendNotification);
+      nextRootLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textTertiary));
+      nextRootLabel.setFont(juce::FontOptions(16.0f));
+      nextRootLabel.setJustificationType(juce::Justification::centred);
       nextRootLabel.setVisible(true);
     } else {
       nextRootLabel.setText("", juce::dontSendNotification);

@@ -46,6 +46,7 @@ public:
     juce::String getCurrentRootText() const { return currentRootText; }
     juce::Colour getCurrentRootColour() const { return currentRootColour; }
     juce::String getNextRootText() const { return nextRootText; }
+    juce::String getCountdownText() const { return countdownText; }
 
     // Called by editor when user selects a voicing/progression/melody in the library
     void setSelectedVoicingId (const juce::String& id);
@@ -69,6 +70,7 @@ private:
     juce::String currentRootText;
     juce::Colour currentRootColour { juce::Colours::white };
     juce::String nextRootText;
+    juce::String countdownText;
     AudioPluginAudioProcessor& processorRef;
     ChordyKeyboardComponent& keyboardRef;
 

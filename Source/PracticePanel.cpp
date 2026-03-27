@@ -266,11 +266,15 @@ void PracticePanel::setSelectedVoicingId (const juce::String& id)
     {
         const auto* v = processorRef.voicingLibrary.getVoicing (id);
         if (v != nullptr)
+        {
             headerLabel.setText ("Practice: " + v->name, juce::dontSendNotification);
+            targetLabel.setText ("Press Start", juce::dontSendNotification);
+        }
         else
-            headerLabel.setText ("PRACTICE -Voicings", juce::dontSendNotification);
-
-        targetLabel.setText ("Select a voicing and press Start", juce::dontSendNotification);
+        {
+            headerLabel.setText ("PRACTICE - Voicings", juce::dontSendNotification);
+            targetLabel.setText ("Select a voicing and press Start", juce::dontSendNotification);
+        }
     }
 }
 
@@ -284,11 +288,15 @@ void PracticePanel::setSelectedProgressionId (const juce::String& id)
     {
         const auto* p = processorRef.progressionLibrary.getProgression (id);
         if (p != nullptr)
+        {
             headerLabel.setText ("Practice: " + p->name, juce::dontSendNotification);
+            targetLabel.setText ("Press Start", juce::dontSendNotification);
+        }
         else
-            headerLabel.setText ("PRACTICE -Progressions", juce::dontSendNotification);
-
-        targetLabel.setText ("Select a progression and press Start", juce::dontSendNotification);
+        {
+            headerLabel.setText ("PRACTICE - Progressions", juce::dontSendNotification);
+            targetLabel.setText ("Select a progression and press Start", juce::dontSendNotification);
+        }
     }
 }
 
@@ -303,11 +311,15 @@ void PracticePanel::setSelectedMelodyId (const juce::String& id)
     {
         const auto* m = processorRef.melodyLibrary.getMelody (id);
         if (m != nullptr)
+        {
             headerLabel.setText ("Practice: " + m->name, juce::dontSendNotification);
+            targetLabel.setText ("Press Start", juce::dontSendNotification);
+        }
         else
-            headerLabel.setText ("PRACTICE -Melodies", juce::dontSendNotification);
-
-        targetLabel.setText ("Select a melody and press Start", juce::dontSendNotification);
+        {
+            headerLabel.setText ("PRACTICE - Melodies", juce::dontSendNotification);
+            targetLabel.setText ("Select a melody and press Start", juce::dontSendNotification);
+        }
     }
 }
 
@@ -553,6 +565,7 @@ void PracticePanel::stopPractice()
     feedbackLabel.setText ("", juce::dontSendNotification);
     currentRootText = {};
     nextRootText = {};
+    countdownText = {};
     currentRootColour = juce::Colour (ChordyTheme::textPrimary);
     timingFeedbackLabel.setText ("", juce::dontSendNotification);
 
@@ -724,27 +737,14 @@ void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
     // --- Count-in phase (beats 0-3) ---
     if (beatInSequence < 4)
     {
-        if (beatInSequence < 2)
         {
-            // Beats 0-1: blank count-in — show countdown above keyboard too
             int countdown = 4 - beatInSequence;
-            currentRootText = juce::String (countdown) + "...";
-            currentRootColour = juce::Colour (ChordyTheme::textTertiary);
-            targetLabel.setText (currentRootText, juce::dontSendNotification);
-        }
-        else
-        {
-            // Beats 2-3: show first chord root (prep) — white, getting ready
-            {
-                juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
-                targetLabel.setText ("Next: " + keyName, juce::dontSendNotification);
-                targetLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textPrimary));
-
-                // Show on main display as "up next"
-                currentRootText = keyName;
-                currentRootColour = juce::Colour (ChordyTheme::textPrimary);
-                nextRootText = "";
-            }
+            juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
+            countdownText = juce::String (countdown);
+            currentRootText = keyName;
+            currentRootColour = juce::Colour (ChordyTheme::textPrimary);
+            targetLabel.setText (juce::String (countdown) + "... " + keyName, juce::dontSendNotification);
+            nextRootText = "";
 
             // Show target notes on keyboard during prep
             keyboardRef.clearAllColours();
@@ -872,6 +872,7 @@ void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
 void PracticePanel::enterPlayPhase()
 {
     timedPhase = TimedPhase::Play;
+    countdownText = {};
     playPhaseScored = false;
     hasWrongAttempt = false;
 
@@ -1451,19 +1452,21 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
             {
                 lastBeatInSequence = beatInt;
                 int countdown = 4 - beatInt;
-                currentRootText = juce::String (countdown) + "...";
-                currentRootColour = juce::Colour (ChordyTheme::textTertiary);
-                targetLabel.setText (currentRootText, juce::dontSendNotification);
                 feedbackLabel.setText ("", juce::dontSendNotification);
 
-                // Show first chord on beats 2-3
+                // Show countdown + key name combined
+                int keyIdx = (processorRef.progressionLibrary.getProgression (practicingProgressionId)->keyPitchClass
+                              + progressionKeyOffset) % 12;
+                juce::String keyName = ChordDetector::noteNameFromPitchClass (keyIdx);
+                countdownText = juce::String (countdown);
+                currentRootText = keyName;
+                currentRootColour = juce::Colour (ChordyTheme::textPrimary);
+                targetLabel.setText (juce::String (countdown) + "... " + keyName, juce::dontSendNotification);
+
+                // Show first chord on keyboard on beats 2-3
                 if (beatInt >= 2 && ! transposedProgression.chords.empty())
                 {
                     const auto& firstChord = transposedProgression.chords[0];
-                    int keyIdx = (processorRef.progressionLibrary.getProgression (practicingProgressionId)->keyPitchClass
-                                  + progressionKeyOffset) % 12;
-                    currentRootText = ChordDetector::noteNameFromPitchClass (keyIdx);
-                    currentRootColour = juce::Colour (ChordyTheme::textPrimary);
 
                     keyboardRef.clearAllColours();
                     for (int note : firstChord.midiNotes)
@@ -1475,6 +1478,7 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
         }
 
         // --- After count-in: cursor follows beats through the progression ---
+        countdownText = {};
         double progressBeat = beatsElapsed - 4.0;
         progressionTimedBeat = progressBeat;
         practiceChart.setCursorBeat (progressBeat);
@@ -1907,19 +1911,19 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
             {
                 lastBeatInSequence = beatInt;
                 int countdown = 4 - beatInt;
-                currentRootText = juce::String (countdown) + "...";
-                currentRootColour = juce::Colour (ChordyTheme::textTertiary);
-                targetLabel.setText (currentRootText, juce::dontSendNotification);
                 feedbackLabel.setText ("", juce::dontSendNotification);
+
+                juce::String keyName = ChordDetector::noteNameFromPitchClass (transposedMelody.keyPitchClass);
+                countdownText = juce::String (countdown);
+                currentRootText = keyName;
+                currentRootColour = juce::Colour (ChordyTheme::textPrimary);
+                targetLabel.setText (juce::String (countdown) + "... " + keyName, juce::dontSendNotification);
 
                 if (beatInt >= 2 && ! transposedMelody.notes.empty())
                 {
                     const auto& firstNote = transposedMelody.notes[0];
                     int pc = ((melodyKeyRootMidi + firstNote.intervalFromKeyRoot) % 12 + 12) % 12;
-                    juce::String keyName = ChordDetector::noteNameFromPitchClass (transposedMelody.keyPitchClass);
                     juce::String noteName = ChordDetector::noteNameFromPitchClass (pc);
-                    currentRootText = keyName;
-                    currentRootColour = juce::Colour (ChordyTheme::textPrimary);
                     targetLabel.setText ("Get ready... " + noteName, juce::dontSendNotification);
 
                     int targetMidi = melodyKeyRootMidi + firstNote.intervalFromKeyRoot;
@@ -1933,6 +1937,7 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
         }
 
         // --- After count-in: cursor follows beats through the melody ---
+        countdownText = {};
         double progressBeat = beatsElapsed - 4.0;
         practiceMLChart.setCursorBeat (progressBeat);
 
