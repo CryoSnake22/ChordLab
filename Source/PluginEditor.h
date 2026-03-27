@@ -48,6 +48,8 @@ private:
   PracticePanel practicePanel;
 
   // Tempo bar
+  juce::TextButton settingsToggle { "Settings" };
+  bool settingsExpanded = true;
   juce::Slider bpmSlider;
   juce::Label bpmLabel;
   juce::ToggleButton metronomeToggle { "Click" };

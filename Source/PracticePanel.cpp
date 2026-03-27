@@ -143,7 +143,7 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
 void PracticePanel::paint (juce::Graphics& g)
 {
     g.setColour (juce::Colour (ChordyTheme::bgSurface));
-    g.fillRoundedRectangle (getLocalBounds().toFloat(), ChordyTheme::cornerRadius);
+    g.fillRect (getLocalBounds());
 }
 
 void PracticePanel::resized()
@@ -522,12 +522,29 @@ void PracticePanel::stopPractice()
     practicingProgressionId = {};
     practicingMelodyId = {};
     progressionChordIndex = 0;
-    practiceChartViewport.setVisible (false);
-    practiceChart.setProgressionReadOnly (nullptr);
-    practiceMLChartViewport.setVisible (false);
-    practiceMLChart.setMelodyReadOnly (nullptr);
     stopMelodyBacking();
     processorRef.stopMelodyPlayback();
+
+    // Restore preview if one was showing before practice started
+    if (showingProgPreview)
+    {
+        practiceChart.setProgressionReadOnly (&previewProgression);
+        practiceChart.clearNoteStates();
+    }
+    else
+    {
+        practiceChart.setProgressionReadOnly (nullptr);
+    }
+
+    if (showingMelPreview)
+    {
+        practiceMLChart.setMelodyReadOnly (&previewMelody);
+        practiceMLChart.clearNoteStates();
+    }
+    else
+    {
+        practiceMLChart.setMelodyReadOnly (nullptr);
+    }
     previousFramePitchClasses.clear();
 
     headerLabel.setText ("PRACTICE", juce::dontSendNotification);
@@ -709,10 +726,11 @@ void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
     {
         if (beatInSequence < 2)
         {
-            // Beats 0-1: blank count-in
+            // Beats 0-1: blank count-in — show countdown above keyboard too
             int countdown = 4 - beatInSequence;
-            targetLabel.setText (juce::String (countdown) + "...",
-                                 juce::dontSendNotification);
+            currentRootText = juce::String (countdown) + "...";
+            currentRootColour = juce::Colour (ChordyTheme::textTertiary);
+            targetLabel.setText (currentRootText, juce::dontSendNotification);
         }
         else
         {
@@ -1197,20 +1215,32 @@ PracticeChallenge PracticePanel::getNextCustomChallenge()
 
 void PracticePanel::onPlay()
 {
-    // --- Melody practice: play the whole melody ---
-    if (practiceType == PracticeType::Melody && transposedMelody.isValid())
+    // --- Melody practice: play the current target note ---
+    if (practiceType == PracticeType::Melody)
     {
-        if (processorRef.isPlayingMelody())
-            processorRef.stopMelodyPlayback();
-        else
-            processorRef.startMelodyPlayback (transposedMelody, melodyKeyRootMidi);
+        if (melodyNoteIndex >= 0 && melodyNoteIndex < static_cast<int> (transposedMelody.notes.size()))
+        {
+            const auto& note = transposedMelody.notes[static_cast<size_t> (melodyNoteIndex)];
+            int midiNote = juce::jlimit (0, 127, melodyKeyRootMidi + note.intervalFromKeyRoot);
+            int channel = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
+            float vel = note.velocity > 0 ? static_cast<float> (note.velocity) / 127.0f : 0.7f;
+            processorRef.addPreviewMidi (juce::MidiMessage::noteOn (channel, midiNote, vel));
+
+            juce::Timer::callAfterDelay (400, [this, channel, midiNote]() {
+                processorRef.addPreviewMidi (juce::MidiMessage::noteOff (channel, midiNote, 0.0f));
+            });
+
+            keyboardRef.clearAllColours();
+            keyboardRef.setKeyColour (midiNote, KeyColour::Correct);
+            keyboardRef.repaint();
+        }
         return;
     }
 
     if (targetNotes.empty())
         return;
 
-    // Just play the sound and show on keyboard — no scoring, no advancing
+    // Voicing/Progression: play the target chord
     int channel = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
     for (int note : targetNotes)
         processorRef.addPreviewMidi (juce::MidiMessage::noteOn (channel, note, 0.7f));
@@ -1421,7 +1451,9 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
             {
                 lastBeatInSequence = beatInt;
                 int countdown = 4 - beatInt;
-                targetLabel.setText (juce::String (countdown) + "...", juce::dontSendNotification);
+                currentRootText = juce::String (countdown) + "...";
+                currentRootColour = juce::Colour (ChordyTheme::textTertiary);
+                targetLabel.setText (currentRootText, juce::dontSendNotification);
                 feedbackLabel.setText ("", juce::dontSendNotification);
 
                 // Show first chord on beats 2-3
@@ -1875,7 +1907,9 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
             {
                 lastBeatInSequence = beatInt;
                 int countdown = 4 - beatInt;
-                targetLabel.setText (juce::String (countdown) + "...", juce::dontSendNotification);
+                currentRootText = juce::String (countdown) + "...";
+                currentRootColour = juce::Colour (ChordyTheme::textTertiary);
+                targetLabel.setText (currentRootText, juce::dontSendNotification);
                 feedbackLabel.setText ("", juce::dontSendNotification);
 
                 if (beatInt >= 2 && ! transposedMelody.notes.empty())

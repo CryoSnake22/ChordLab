@@ -852,7 +852,7 @@ void MelodyLibraryPanel::onDelete()
     {
         processorRef.melodyLibrary.removeMelody (id);
         processorRef.saveLibrariesToDisk();
-        melodyList.updateContent();
+        updateDisplayedMelodies();
         repaint();
     }
 }

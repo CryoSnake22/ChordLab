@@ -121,7 +121,15 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   // Practice panel
   addAndMakeVisible(practicePanel);
 
-  // Tempo bar
+  // Tempo bar — settings toggle
+  settingsToggle.setButtonText("Hide Settings");
+  settingsToggle.onClick = [this] {
+    settingsExpanded = ! settingsExpanded;
+    settingsToggle.setButtonText(settingsExpanded ? "Hide Settings" : "Settings");
+    resized();
+  };
+  addAndMakeVisible(settingsToggle);
+
   bpmLabel.setText("BPM:", juce::dontSendNotification);
   bpmLabel.setFont(juce::FontOptions(14.0f, juce::Font::bold));
   bpmLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textSecondary));
@@ -299,30 +307,57 @@ void AudioPluginAudioProcessorEditor::resized() {
 
   // Tempo bar
   auto tempoArea = area.removeFromTop(36).reduced(8, 2);
-  bpmLabel.setBounds(tempoArea.removeFromLeft(36));
-  bpmSlider.setBounds(tempoArea.removeFromLeft(140));
+  settingsToggle.setBounds(tempoArea.removeFromLeft(70));
   tempoArea.removeFromLeft(8);
-  metronomeToggle.setBounds(tempoArea.removeFromLeft(60));
-  metronomeVolumeSlider.setBounds(tempoArea.removeFromLeft(50));
-  tempoArea.removeFromLeft(4);
-  hostSyncToggle.setBounds(tempoArea.removeFromLeft(60));
-  tempoArea.removeFromLeft(8);
-  instrumentModeCombo.setBounds(tempoArea.removeFromLeft(100));
-  tempoArea.removeFromLeft(4);
-  if (pluginSelector.isVisible())
+
+  if (settingsExpanded)
   {
-    pluginSelector.setBounds(tempoArea.removeFromLeft(140));
+    bpmLabel.setBounds(tempoArea.removeFromLeft(36));
+    bpmSlider.setBounds(tempoArea.removeFromLeft(140));
+    tempoArea.removeFromLeft(8);
+    metronomeToggle.setBounds(tempoArea.removeFromLeft(60));
+    metronomeVolumeSlider.setBounds(tempoArea.removeFromLeft(50));
     tempoArea.removeFromLeft(4);
-    rescanButton.setBounds(tempoArea.removeFromLeft(40));
+    hostSyncToggle.setBounds(tempoArea.removeFromLeft(60));
+    tempoArea.removeFromLeft(8);
+    instrumentModeCombo.setBounds(tempoArea.removeFromLeft(100));
     tempoArea.removeFromLeft(4);
-    if (editPluginButton.isVisible())
+    if (pluginSelector.isVisible())
     {
-      editPluginButton.setBounds(tempoArea.removeFromLeft(55));
+      pluginSelector.setBounds(tempoArea.removeFromLeft(140));
       tempoArea.removeFromLeft(4);
+      rescanButton.setBounds(tempoArea.removeFromLeft(40));
+      tempoArea.removeFromLeft(4);
+      if (editPluginButton.isVisible())
+      {
+        editPluginButton.setBounds(tempoArea.removeFromLeft(55));
+        tempoArea.removeFromLeft(4);
+      }
     }
+    synthVolumeSlider.setBounds(tempoArea.removeFromLeft(70));
+    tempoArea.removeFromLeft(8);
+
+    bpmLabel.setVisible(true);
+    bpmSlider.setVisible(true);
+    metronomeToggle.setVisible(true);
+    metronomeVolumeSlider.setVisible(true);
+    hostSyncToggle.setVisible(true);
+    instrumentModeCombo.setVisible(true);
+    synthVolumeSlider.setVisible(true);
   }
-  synthVolumeSlider.setBounds(tempoArea.removeFromLeft(70));
-  tempoArea.removeFromLeft(8);
+  else
+  {
+    bpmLabel.setVisible(false);
+    bpmSlider.setVisible(false);
+    metronomeToggle.setVisible(false);
+    metronomeVolumeSlider.setVisible(false);
+    hostSyncToggle.setVisible(false);
+    instrumentModeCombo.setVisible(false);
+    pluginSelector.setVisible(false);
+    rescanButton.setVisible(false);
+    editPluginButton.setVisible(false);
+    synthVolumeSlider.setVisible(false);
+  }
   beatIndicator.setBounds(tempoArea);
 
   // Bottom panels: library on left, practice on right
@@ -439,6 +474,8 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
   int currentTab = libraryTabs.getCurrentTabIndex();
   if (currentTab != lastTabIndex) {
     lastTabIndex = currentTab;
+    if (practicePanel.isPracticing())
+      practicePanel.stopPractice();
     stopVoicingPreview();
     if (processorRef.isPlayingProgression())
       processorRef.stopProgressionPlayback();

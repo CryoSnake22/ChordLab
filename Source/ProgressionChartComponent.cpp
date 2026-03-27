@@ -722,12 +722,16 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
                                         static_cast<float> (detailedChordLabelHeight), 3.0f);
             }
 
-            g.setColour (juce::Colour (isSelected ? ChordyTheme::textPrimary : ChordyTheme::textSecondary));
-            g.setFont (juce::FontOptions (11.0f));
-            g.drawText (chord.getDisplayName(),
-                        juce::Rectangle<float> (lx, labelRowY, lw,
-                                                static_cast<float> (detailedChordLabelHeight)),
-                        juce::Justification::centred, true);
+            // Only draw chord name if there's enough space (skip tiny slices)
+            if (lw > 30.0f)
+            {
+                g.setColour (juce::Colour (isSelected ? ChordyTheme::textPrimary : ChordyTheme::textSecondary));
+                g.setFont (juce::FontOptions (11.0f));
+                g.drawText (chord.getDisplayName(),
+                            juce::Rectangle<float> (lx, labelRowY, lw,
+                                                    static_cast<float> (detailedChordLabelHeight)),
+                            juce::Justification::centred, false);
+            }
         }
     }
 

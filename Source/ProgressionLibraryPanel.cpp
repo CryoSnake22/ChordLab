@@ -881,8 +881,7 @@ void ProgressionLibraryPanel::onDelete()
     {
         processorRef.progressionLibrary.removeProgression (id);
         processorRef.saveLibrariesToDisk();
-        progressionList.updateContent();
-        // (chart preview now lives in practice panel)
+        updateDisplayedProgressions();
         repaint();
     }
 }
