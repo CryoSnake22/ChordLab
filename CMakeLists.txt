@@ -3,7 +3,7 @@ cmake_minimum_required(VERSION 3.24)
 # Change to your project name
 
 project(
-  Chordy
+  ChordLab
   VERSION 0.0.1
   LANGUAGES C CXX)
 
@@ -42,8 +42,10 @@ juce_add_plugin(
   ${PROJECT_NAME}
   COMPANY_NAME
   JezzterInc
+  ICON_BIG
+  "${CMAKE_CURRENT_SOURCE_DIR}/icon_to_set.png"
   IS_SYNTH
-  FALSE
+  TRUE
   NEEDS_MIDI_INPUT
   TRUE
   NEEDS_MIDI_OUTPUT

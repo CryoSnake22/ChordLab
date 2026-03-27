@@ -17,7 +17,7 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   juce::LookAndFeel::setDefaultLookAndFeel(&chordyLookAndFeel);
 
   // Title
-  titleLabel.setText("CHORDY", juce::dontSendNotification);
+  titleLabel.setText("CHORDLAB", juce::dontSendNotification);
   titleLabel.setFont(juce::FontOptions(24.0f, juce::Font::bold));
   titleLabel.setColour(juce::Label::textColourId, juce::Colour(ChordyTheme::textPrimary));
   addAndMakeVisible(titleLabel);

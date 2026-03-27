@@ -1,5 +1,5 @@
 .PHONY: build
-PROJECT_NAME = "Chordy"
+PROJECT_NAME = "ChordLab"
 # build:
 # 	@cmake -B build -G Ninja -DCMAKE_BUILD_TYPE=Release
 build: 
