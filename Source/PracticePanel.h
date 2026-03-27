@@ -149,6 +149,7 @@ private:
     std::set<int> melodyTimedScored;       // note indices already scored in timed mode
     int melodyTimedQualitySum = 0;         // sum of per-note qualities for averaging
     MelodyChartComponent practiceMLChart;
+    juce::Viewport practiceMLChartViewport;
     juce::ToggleButton backingToggle { "Backing" };
     std::vector<int> backingChordNotes;
     int currentBackingChordIndex = -1;

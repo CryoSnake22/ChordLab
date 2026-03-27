@@ -108,6 +108,8 @@ MelodyLibraryPanel::MelodyLibraryPanel (AudioPluginAudioProcessor& processor)
     searchEditor.onTextChange = [this] { updateDisplayedMelodies(); };
     addAndMakeVisible (searchEditor);
 
+    updateDisplayedMelodies();
+
     addChildComponent (chartPreview);
 
     recordButton.onClick = [this] {

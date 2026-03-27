@@ -22,6 +22,9 @@ public:
     void clearNoteStates();
 
     int getHighlightedNoteIndex() const { return highlightedNoteIndex; }
+    void setViewportHeight (int height);
+    int getIdealHeight() const;
+    int getNoteAreaHeight() const;
 
     // Chord context editing
     int getSelectedChordContext() const { return selectedChordContextIndex; }
@@ -56,14 +59,16 @@ private:
     int dragChordIndex = -1;
 
     static constexpr int beatsPerRow = 8;
-    static constexpr int noteAreaHeight = 70;
+    static constexpr int defaultNoteAreaHeight = 70;
     static constexpr int chordBarHeight = 20;
     static constexpr int rowGap = 4;
     static constexpr int leftPad = 4;
     static constexpr int rightPad = 4;
     static constexpr float edgeHitZone = 6.0f;
+    static constexpr int melodyPad = 8;
+    int viewportHeight = 0;  // 0 = use default fixed sizing
 
-    int rowHeight() const { return noteAreaHeight + chordBarHeight; }
+    int rowHeight() const;
 
     float getBeatWidth() const;
     int getRowForBeat (double beat) const;

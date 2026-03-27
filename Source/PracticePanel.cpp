@@ -92,8 +92,47 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
     };
     addAndMakeVisible (progDetailedToggle);
 
-    practiceMLChart.setVisible (false);
-    addAndMakeVisible (practiceMLChart);
+    // Click-to-play for progression chord preview
+    practiceChart.onChordSelected = [this](int chordIdx) {
+        if (practicing) return;  // don't interfere during practice
+        auto* prog = practiceChart.isDetailedView()
+            ? (showingProgPreview ? &previewProgression : nullptr) : nullptr;
+        if (prog == nullptr) return;
+        if (chordIdx < 0 || chordIdx >= static_cast<int> (prog->chords.size())) return;
+
+        const auto& chord = prog->chords[static_cast<size_t> (chordIdx)];
+        int ch = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
+        for (int note : chord.midiNotes)
+            processorRef.addPreviewMidi (juce::MidiMessage::noteOn (ch, note, 0.7f));
+
+        juce::Timer::callAfterDelay (600, [this, ch, notes = chord.midiNotes]() {
+            for (int note : notes)
+                processorRef.addPreviewMidi (juce::MidiMessage::noteOff (ch, note, 0.0f));
+        });
+    };
+
+    // Click-to-play for melody note preview
+    practiceMLChart.onNoteSelected = [this](int noteIdx) {
+        if (practicing) return;
+        if (! showingMelPreview) return;
+        if (noteIdx < 0 || noteIdx >= static_cast<int> (previewMelody.notes.size())) return;
+
+        const auto& note = previewMelody.notes[static_cast<size_t> (noteIdx)];
+        int midiNote = 60 + previewMelody.keyPitchClass + note.intervalFromKeyRoot;
+        midiNote = juce::jlimit (0, 127, midiNote);
+        int ch = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
+        float vel = note.velocity > 0 ? static_cast<float> (note.velocity) / 127.0f : 0.7f;
+        processorRef.addPreviewMidi (juce::MidiMessage::noteOn (ch, midiNote, vel));
+
+        juce::Timer::callAfterDelay (400, [this, ch, midiNote]() {
+            processorRef.addPreviewMidi (juce::MidiMessage::noteOff (ch, midiNote, 0.0f));
+        });
+    };
+
+    practiceMLChartViewport.setViewedComponent (&practiceMLChart, false);
+    practiceMLChartViewport.setScrollBarsShown (true, false);
+    practiceMLChartViewport.setVisible (false);
+    addAndMakeVisible (practiceMLChartViewport);
 
     backingToggle.setToggleState (true, juce::dontSendNotification);
     addAndMakeVisible (backingToggle);
@@ -192,12 +231,17 @@ void PracticePanel::resized()
         int scrollbarW = (idealH > area.getHeight()) ? 10 : 0;
         practiceChart.setBounds (0, 0, area.getWidth() - scrollbarW, idealH);
         practiceChartViewport.setVisible (true);
-        practiceMLChart.setBounds (0, 0, 0, 0);
+        practiceMLChartViewport.setBounds (0, 0, 0, 0);
+        practiceMLChartViewport.setVisible (false);
     }
     else if (showMelChart)
     {
-        practiceMLChart.setBounds (area);
-        practiceMLChart.setVisible (true);
+        practiceMLChartViewport.setBounds (area);
+        practiceMLChart.setViewportHeight (area.getHeight());
+        int melIdealH = juce::jmax (1, practiceMLChart.getIdealHeight());
+        int melScrollW = (melIdealH > area.getHeight()) ? 10 : 0;
+        practiceMLChart.setBounds (0, 0, area.getWidth() - melScrollW, melIdealH);
+        practiceMLChartViewport.setVisible (true);
         practiceChartViewport.setBounds (0, 0, 0, 0);
         practiceChartViewport.setVisible (false);
     }
@@ -205,7 +249,8 @@ void PracticePanel::resized()
     {
         practiceChartViewport.setBounds (0, 0, 0, 0);
         practiceChartViewport.setVisible (false);
-        practiceMLChart.setBounds (0, 0, 0, 0);
+        practiceMLChartViewport.setBounds (0, 0, 0, 0);
+        practiceMLChartViewport.setVisible (false);
     }
 }
 
@@ -479,7 +524,7 @@ void PracticePanel::stopPractice()
     progressionChordIndex = 0;
     practiceChartViewport.setVisible (false);
     practiceChart.setProgressionReadOnly (nullptr);
-    practiceMLChart.setVisible (false);
+    practiceMLChartViewport.setVisible (false);
     practiceMLChart.setMelodyReadOnly (nullptr);
     stopMelodyBacking();
     processorRef.stopMelodyPlayback();
@@ -1718,7 +1763,7 @@ void PracticePanel::loadMelodyChallenge (int keyIndex)
     melodyTimedQualitySum = 0;
 
     // Set up chart
-    practiceMLChart.setVisible (true);
+    practiceMLChartViewport.setVisible (true);
     practiceMLChart.setMelodyReadOnly (&transposedMelody);
     practiceMLChart.clearNoteStates();
     practiceMLChart.setNoteState (0, MelodyChartComponent::NoteState::Target);

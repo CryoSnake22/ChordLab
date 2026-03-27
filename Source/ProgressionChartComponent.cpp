@@ -448,7 +448,13 @@ juce::Rectangle<float> ProgressionChartComponent::getNoteDetailRect (
     float x = leftPad + static_cast<float> (clipStart - rowStartBeat) * bw;
     float w = juce::jmax (6.0f, static_cast<float> (clipEnd - clipStart) * bw);
     float y = midiToY (midiNote, minMidi, maxMidi, row);
-    float h = 10.0f;
+    // Height = one semitone's worth of vertical space, capped at 16px
+    int noteAreaH = getDetailedNoteAreaHeight();
+    float range = static_cast<float> (maxMidi - minMidi);
+    if (range <= 0.0f) range = 12.0f;
+    float innerPad = static_cast<float> (detailedPad);
+    float availH = static_cast<float> (noteAreaH) - innerPad * 2.0f;
+    float h = juce::jmin (16.0f, availH / range);
     return { x, y - h * 0.5f, w, h };
 }
 
@@ -460,7 +466,7 @@ void ProgressionChartComponent::paint (juce::Graphics& g)
 {
     auto* prog = getProgression();
 
-    g.fillAll (juce::Colour (ChordyTheme::bgDeepest));
+    g.fillAll (juce::Colour (ChordyTheme::bgSurface));
 
     if (prog == nullptr || prog->chords.empty())
     {
@@ -605,23 +611,18 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
         float noteAreaW = static_cast<float> (getWidth() - leftPad - rightPad);
         float noteY = y + dPad;  // top padding before note area
 
-        // Note area background
-        g.setColour (juce::Colour (ChordyTheme::bgSurface));
-        g.fillRoundedRectangle (static_cast<float> (leftPad), noteY,
-                                noteAreaW, static_cast<float> (noteAreaH), ChordyTheme::cornerRadius);
-
-        // Chord label bar background (below note area)
+        // Chord label bar background (below note area, no rounding)
         float labelY = noteY + static_cast<float> (noteAreaH) + 2.0f;
         g.setColour (juce::Colour (ChordyTheme::melodyChordBg));
-        g.fillRoundedRectangle (static_cast<float> (leftPad), labelY,
-                                noteAreaW, static_cast<float> (detailedChordLabelHeight), ChordyTheme::cornerRadius);
+        g.fillRect (static_cast<float> (leftPad), labelY,
+                    noteAreaW, static_cast<float> (detailedChordLabelHeight));
 
         // Bar lines in note area
         g.setColour (juce::Colour (ChordyTheme::chartBarLine).withAlpha (0.4f));
         for (int beat = 0; beat <= beatsPerRow; beat += beatsPerBar)
         {
             float x = leftPad + beat * bw;
-            g.drawVerticalLine (static_cast<int> (x), noteY + dPad, noteY + static_cast<float> (noteAreaH) - dPad);
+            g.drawVerticalLine (static_cast<int> (x), noteY, noteY + static_cast<float> (noteAreaH));
         }
     }
 
@@ -681,17 +682,17 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
                 if (rect.isEmpty()) continue;
 
                 g.setColour (juce::Colour (noteColour));
-                g.fillRect (rect);
+                g.fillRoundedRectangle (rect, 2.0f);
 
                 // Target outline (amber)
                 if (state == NoteState::Target || (state == NoteState::Default && isSelected))
                 {
                     g.setColour (juce::Colour (ChordyTheme::accent));
-                    g.drawRect (rect, 1.5f);
+                    g.drawRoundedRectangle (rect, 2.0f, 1.5f);
                 }
 
-                // Note name — only if rect is large enough to read
-                if (rect.getWidth() > 28.0f && rect.getHeight() > 9.0f)
+                // Note name — always show
+                if (rect.getHeight() > 7.0f)
                 {
                     bool darkText = (state == NoteState::Correct || state == NoteState::Missed);
                     g.setColour (juce::Colour (darkText ? 0xFF1A1A1A : ChordyTheme::textSecondary));

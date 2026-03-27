@@ -121,75 +121,132 @@ std::vector<ProgressionChord> ProgressionRecorder::analyzeChordChanges (
         // Detect chord change: a new note-on changed the active set
         if (! currentNoteSet.empty() && currentNoteSet != lastChordNotes)
         {
-            // If we had a previous chord, close it out
-            if (! lastChordNotes.empty() && ! chords.empty())
-            {
-                chords.back().durationBeats = beatTime - chordStartBeat;
-            }
+            // Check if notes are being ADDED to an existing held chord
+            // (all previous notes still held + new note added)
+            bool isAccumulating = ! lastChordNotes.empty()
+                && std::includes (currentNoteSet.begin(), currentNoteSet.end(),
+                                  lastChordNotes.begin(), lastChordNotes.end());
 
-            // Build the new chord with velocities
-            std::vector<int> noteVec;
-            std::vector<int> velVec;
-            for (const auto& pair : activeNotes)
+            if (isAccumulating && ! chords.empty())
             {
-                noteVec.push_back (pair.first);
-                velVec.push_back (pair.second);
-            }
-            // Sort by note number, keeping velocities parallel
-            for (size_t a = 0; a + 1 < noteVec.size(); ++a)
-                for (size_t b = a + 1; b < noteVec.size(); ++b)
-                    if (noteVec[a] > noteVec[b])
+                // Extend the current chord's notes instead of starting a new one
+                auto& cur = chords.back();
+                cur.midiNotes.clear();
+                cur.midiVelocities.clear();
+                for (const auto& pair : activeNotes)
+                {
+                    cur.midiNotes.push_back (pair.first);
+                    cur.midiVelocities.push_back (pair.second);
+                }
+                // Sort by note number
+                for (size_t a = 0; a + 1 < cur.midiNotes.size(); ++a)
+                    for (size_t b = a + 1; b < cur.midiNotes.size(); ++b)
+                        if (cur.midiNotes[a] > cur.midiNotes[b])
+                        {
+                            std::swap (cur.midiNotes[a], cur.midiNotes[b]);
+                            std::swap (cur.midiVelocities[a], cur.midiVelocities[b]);
+                        }
+
+                // Recompute intervals and re-detect chord
+                cur.intervals.clear();
+                int bassNote = cur.midiNotes[0];
+                cur.rootPitchClass = bassNote % 12;
+                for (int note : cur.midiNotes)
+                    cur.intervals.push_back (note - bassNote);
+
+                cur.name = {};
+                cur.linkedVoicingId = {};
+                if (voicingLibrary != nullptr)
+                {
+                    juce::String displayName;
+                    auto* match = voicingLibrary->findByNotes (cur.midiNotes, displayName);
+                    if (match != nullptr)
                     {
-                        std::swap (noteVec[a], noteVec[b]);
-                        std::swap (velVec[a], velVec[b]);
+                        cur.linkedVoicingId = match->id;
+                        cur.name = match->name;
+                        cur.quality = match->quality;
+                        cur.alterations = match->alterations;
+                        cur.rootPitchClass = match->rootPitchClass;
                     }
-
-            ProgressionChord chord;
-            chord.midiNotes = noteVec;
-            chord.midiVelocities = velVec;
-            chord.startBeat = beatTime;
-            chord.durationBeats = 0.0; // will be set when next chord starts or at end
-
-            // Compute intervals from lowest note
-            int bassNote = noteVec[0];
-            chord.rootPitchClass = bassNote % 12;
-            for (int note : noteVec)
-                chord.intervals.push_back (note - bassNote);
-
-            // Try voicing library match first
-            if (voicingLibrary != nullptr)
-            {
-                juce::String displayName;
-                auto* match = voicingLibrary->findByNotes (noteVec, displayName);
-                if (match != nullptr)
-                {
-                    chord.linkedVoicingId = match->id;
-                    chord.name = match->name;
-                    chord.quality = match->quality;
-                    chord.alterations = match->alterations;
-                    chord.rootPitchClass = match->rootPitchClass;
                 }
+                if (cur.name.isEmpty())
+                {
+                    auto result = ChordDetector::detect (cur.midiNotes);
+                    if (result.isValid())
+                    {
+                        cur.rootPitchClass = result.rootPitchClass;
+                        cur.quality = result.quality;
+                        cur.name = result.displayName;
+                    }
+                    else
+                        cur.name = ChordDetector::noteNameFromPitchClass (cur.rootPitchClass) + "?";
+                }
+
+                lastChordNotes = currentNoteSet;
             }
-
-            // Fall back to ChordDetector
-            if (chord.name.isEmpty())
+            else
             {
-                auto result = ChordDetector::detect (noteVec);
-                if (result.isValid())
-                {
-                    chord.rootPitchClass = result.rootPitchClass;
-                    chord.quality = result.quality;
-                    chord.name = result.displayName;
-                }
-                else
-                {
-                    chord.name = ChordDetector::noteNameFromPitchClass (chord.rootPitchClass) + "?";
-                }
-            }
+                // New chord — close previous and create new
+                if (! lastChordNotes.empty() && ! chords.empty())
+                    chords.back().durationBeats = beatTime - chordStartBeat;
 
-            chords.push_back (chord);
-            lastChordNotes = currentNoteSet;
-            chordStartBeat = beatTime;
+                std::vector<int> noteVec;
+                std::vector<int> velVec;
+                for (const auto& pair : activeNotes)
+                {
+                    noteVec.push_back (pair.first);
+                    velVec.push_back (pair.second);
+                }
+                for (size_t a = 0; a + 1 < noteVec.size(); ++a)
+                    for (size_t b = a + 1; b < noteVec.size(); ++b)
+                        if (noteVec[a] > noteVec[b])
+                        {
+                            std::swap (noteVec[a], noteVec[b]);
+                            std::swap (velVec[a], velVec[b]);
+                        }
+
+                ProgressionChord chord;
+                chord.midiNotes = noteVec;
+                chord.midiVelocities = velVec;
+                chord.startBeat = beatTime;
+                chord.durationBeats = 0.0;
+
+                int bassNote = noteVec[0];
+                chord.rootPitchClass = bassNote % 12;
+                for (int note : noteVec)
+                    chord.intervals.push_back (note - bassNote);
+
+                if (voicingLibrary != nullptr)
+                {
+                    juce::String displayName;
+                    auto* match = voicingLibrary->findByNotes (noteVec, displayName);
+                    if (match != nullptr)
+                    {
+                        chord.linkedVoicingId = match->id;
+                        chord.name = match->name;
+                        chord.quality = match->quality;
+                        chord.alterations = match->alterations;
+                        chord.rootPitchClass = match->rootPitchClass;
+                    }
+                }
+
+                if (chord.name.isEmpty())
+                {
+                    auto result = ChordDetector::detect (noteVec);
+                    if (result.isValid())
+                    {
+                        chord.rootPitchClass = result.rootPitchClass;
+                        chord.quality = result.quality;
+                        chord.name = result.displayName;
+                    }
+                    else
+                        chord.name = ChordDetector::noteNameFromPitchClass (chord.rootPitchClass) + "?";
+                }
+
+                chords.push_back (chord);
+                lastChordNotes = currentNoteSet;
+                chordStartBeat = beatTime;
+            }
         }
     }
 

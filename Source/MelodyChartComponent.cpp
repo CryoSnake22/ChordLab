@@ -66,6 +66,41 @@ void MelodyChartComponent::setSelectedChordContext (int index)
 // Layout helpers
 //==============================================================================
 
+void MelodyChartComponent::setViewportHeight (int height)
+{
+    viewportHeight = juce::jmax (60, height);
+}
+
+int MelodyChartComponent::getNoteAreaHeight() const
+{
+    if (viewportHeight > 0)
+        return viewportHeight - chordBarHeight - melodyPad * 2 - 2;
+    return defaultNoteAreaHeight;
+}
+
+int MelodyChartComponent::rowHeight() const
+{
+    if (viewportHeight > 0)
+        return viewportHeight;
+    return defaultNoteAreaHeight + chordBarHeight;
+}
+
+int MelodyChartComponent::getIdealHeight() const
+{
+    auto* mel = getMelody();
+    if (mel == nullptr || mel->notes.empty())
+        return rowHeight();
+
+    double totalBeats = mel->totalBeats;
+    if (totalBeats <= 0.0)
+    {
+        for (const auto& n : mel->notes)
+            totalBeats = juce::jmax (totalBeats, n.startBeat + n.durationBeats);
+    }
+    int numRows = juce::jmax (1, static_cast<int> (std::ceil (totalBeats / beatsPerRow)));
+    return numRows * (rowHeight() + rowGap);
+}
+
 float MelodyChartComponent::getBeatWidth() const
 {
     return static_cast<float> (getWidth() - leftPad - rightPad) / beatsPerRow;
@@ -127,10 +162,10 @@ float MelodyChartComponent::intervalToY (int interval, int minInterval, int maxI
 
     // Invert: higher pitch = lower Y (top of area)
     float normalised = static_cast<float> (interval - minInterval) / range;
-    float topPad = 3.0f;
-    float botPad = 3.0f;
-    float availableH = static_cast<float> (noteAreaHeight) - topPad - botPad;
-    return rowY + topPad + availableH * (1.0f - normalised);
+    float pad = static_cast<float> (melodyPad);
+    float noteY = (viewportHeight > 0) ? rowY + pad : rowY;
+    float availableH = static_cast<float> (getNoteAreaHeight()) - pad * 2.0f;
+    return noteY + pad + availableH * (1.0f - normalised);
 }
 
 juce::Rectangle<float> MelodyChartComponent::getNoteRect (
@@ -148,7 +183,11 @@ juce::Rectangle<float> MelodyChartComponent::getNoteRect (
     float x = leftPad + static_cast<float> (clipStart - rowStartBeat) * bw;
     float w = std::max (12.0f, static_cast<float> (clipEnd - clipStart) * bw);
     float y = intervalToY (note.intervalFromKeyRoot, minInterval, maxInterval, row);
-    float h = 18.0f;
+    // Height = one semitone's worth of vertical space, capped at 16px
+    float range = static_cast<float> (maxInterval - minInterval);
+    if (range <= 0.0f) range = 12.0f;
+    float availH = static_cast<float> (getNoteAreaHeight()) - 6.0f;
+    float h = juce::jmin (16.0f, availH / range);
 
     return { x, y - h * 0.5f, w, h };
 }
@@ -167,7 +206,7 @@ juce::Rectangle<float> MelodyChartComponent::getChordContextRect (
 
     float x = leftPad + static_cast<float> (clipStart - rowStartBeat) * bw;
     float w = static_cast<float> (clipEnd - clipStart) * bw;
-    float y = static_cast<float> (row * (rowHeight() + rowGap)) + noteAreaHeight;
+    float y = static_cast<float> (row * (rowHeight() + rowGap)) + getNoteAreaHeight();
 
     return { x, y, w, static_cast<float> (chordBarHeight) };
 }
@@ -429,10 +468,10 @@ void MelodyChartComponent::paint (juce::Graphics& g)
         g.setColour (juce::Colour (ChordyTheme::bgSurface));
         g.fillRoundedRectangle (static_cast<float> (leftPad), y,
                                 static_cast<float> (getWidth() - leftPad - rightPad),
-                                static_cast<float> (noteAreaHeight), ChordyTheme::cornerRadius);
+                                static_cast<float> (getNoteAreaHeight()), ChordyTheme::cornerRadius);
 
         // Chord bar background
-        float chordY = y + noteAreaHeight;
+        float chordY = y + getNoteAreaHeight();
         g.setColour (juce::Colour (ChordyTheme::melodyChordBg));
         g.fillRoundedRectangle (static_cast<float> (leftPad), chordY,
                                 static_cast<float> (getWidth() - leftPad - rightPad),
@@ -443,7 +482,7 @@ void MelodyChartComponent::paint (juce::Graphics& g)
         for (int beat = 0; beat <= beatsPerRow; beat += beatsPerBar)
         {
             float x = leftPad + beat * bw;
-            g.drawVerticalLine (static_cast<int> (x), y, y + noteAreaHeight);
+            g.drawVerticalLine (static_cast<int> (x), y, y + getNoteAreaHeight());
         }
 
         // Beat grid lines (lighter, within note area)
@@ -452,7 +491,7 @@ void MelodyChartComponent::paint (juce::Graphics& g)
         {
             if (beat % beatsPerBar == 0) continue; // already drawn
             float x = leftPad + beat * bw;
-            g.drawVerticalLine (static_cast<int> (x), y, y + noteAreaHeight);
+            g.drawVerticalLine (static_cast<int> (x), y, y + getNoteAreaHeight());
         }
     }
 
@@ -516,17 +555,17 @@ void MelodyChartComponent::paint (juce::Graphics& g)
             if (rect.isEmpty()) continue;
 
             g.setColour (juce::Colour (noteColour));
-            g.fillRect (rect);
+            g.fillRoundedRectangle (rect, 2.0f);
 
             // Draw amber outline for the current target note
             if (isTarget)
             {
                 g.setColour (juce::Colour (ChordyTheme::accent));
-                g.drawRect (rect, 1.5f);
+                g.drawRoundedRectangle (rect, 2.0f, 1.5f);
             }
 
-            // Note name inside rect — only if large enough to read
-            if (rect.getWidth() > 28.0f && rect.getHeight() > 9.0f)
+            // Note name — always show
+            if (rect.getHeight() > 7.0f)
             {
                 int pitchClass = ((mel->keyPitchClass + note.intervalFromKeyRoot) % 12 + 12) % 12;
                 juce::String noteName = ChordDetector::noteNameFromPitchClass (pitchClass);

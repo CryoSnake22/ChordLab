@@ -93,6 +93,8 @@ ProgressionLibraryPanel::ProgressionLibraryPanel (AudioPluginAudioProcessor& pro
     searchEditor.onTextChange = [this] { updateDisplayedProgressions(); };
     addAndMakeVisible (searchEditor);
 
+    updateDisplayedProgressions();
+
     recordButton.onClick = [this] {
         if (panelState == PanelState::Idle)
             enterCountIn();
