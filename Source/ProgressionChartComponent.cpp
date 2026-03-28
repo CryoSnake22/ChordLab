@@ -715,8 +715,11 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
                 g.setColour (juce::Colour (noteColour));
                 g.fillRoundedRectangle (rect, 2.0f);
 
-                // Target outline (amber)
-                if (state == NoteState::Target || (state == NoteState::Default && isSelected))
+                // Target outline (amber) — only for notes active at clicked beat when browsing
+                bool noteActiveAtClick = isSelected && (editMode
+                    || lastClickedBeat < 0.0
+                    || (lastClickedBeat >= noteStart && lastClickedBeat < noteStart + noteDur));
+                if (state == NoteState::Target || (state == NoteState::Default && noteActiveAtClick))
                 {
                     g.setColour (juce::Colour (ChordyTheme::accent));
                     g.drawRoundedRectangle (rect, 2.0f, 1.5f);

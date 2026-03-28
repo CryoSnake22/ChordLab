@@ -682,11 +682,10 @@ void MelodyLibraryPanel::onStopRecording()
     currentQuantizeResolution = 0.0;
     pendingMelody.notes = melodyNotes;
 
-    // Recompute totalBeats from quantized notes
-    double maxEnd = 0.0;
-    for (const auto& n : pendingMelody.notes)
-        maxEnd = juce::jmax (maxEnd, n.startBeat + n.durationBeats);
-    pendingMelody.totalBeats = maxEnd;
+    // Round totalBeats up to the nearest bar (4 beats) to preserve trailing silence
+    pendingMelody.totalBeats = std::ceil (totalBeats / 4.0) * 4.0;
+    if (pendingMelody.totalBeats < 4.0)
+        pendingMelody.totalBeats = 4.0;
 
     // Default chord context: one chord spanning full duration
     MelodyChordContext defaultCC;

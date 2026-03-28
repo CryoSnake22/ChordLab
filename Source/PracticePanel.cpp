@@ -103,7 +103,13 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
         if (processorRef.isPlayingMelody())
             processorRef.stopMelodyPlayback();
 
-        if (chordIdx < 0 || chordIdx >= static_cast<int> (previewProgression.chords.size())) return;
+        if (chordIdx < 0 || chordIdx >= static_cast<int> (previewProgression.chords.size()))
+        {
+            // Deselect: clear keyboard
+            keyboardRef.clearAllColours();
+            keyboardRef.repaint();
+            return;
+        }
 
         const auto& chord = previewProgression.chords[static_cast<size_t> (chordIdx)];
         double clickBeat = practiceChart.getLastClickedBeat();
@@ -166,7 +172,12 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
             processorRef.stopProgressionPlayback();
         if (processorRef.isPlayingMelody())
             processorRef.stopMelodyPlayback();
-        if (noteIdx < 0 || noteIdx >= static_cast<int> (previewMelody.notes.size())) return;
+        if (noteIdx < 0 || noteIdx >= static_cast<int> (previewMelody.notes.size()))
+        {
+            keyboardRef.clearAllColours();
+            keyboardRef.repaint();
+            return;
+        }
 
         const auto& note = previewMelody.notes[static_cast<size_t> (noteIdx)];
         int midiNote = 60 + previewMelody.keyPitchClass + note.intervalFromKeyRoot;
@@ -1789,7 +1800,7 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
                 && progressionTimedScored.count (nextCI) == 0)
             {
                 const auto& nextChord = transposedProgression.chords[static_cast<size_t> (nextCI)];
-                if (nextChord.startBeat - progressBeat < 1.0)
+                if (nextChord.startBeat - progressBeat < 0.25)
                 {
                     std::set<int> nextTargetPC, playedPC2;
                     for (int n : nextChord.midiNotes) nextTargetPC.insert (n % 12);
@@ -2204,9 +2215,9 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
                 && melodyTimedScored.count (nextIdx) == 0
                 && (candidates.empty() || nextIdx != candidates[0]))
             {
-                // Only allow anticipation within half a beat of the next note's start
+                // Only allow anticipation within quarter beat of the next note's start
                 const auto& nextNote = transposedMelody.notes[static_cast<size_t> (nextIdx)];
-                if (nextNote.startBeat - progressBeat < 0.5)
+                if (nextNote.startBeat - progressBeat < 0.25)
                     candidates.push_back (nextIdx);
             }
 

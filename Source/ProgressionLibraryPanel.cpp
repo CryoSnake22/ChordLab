@@ -735,10 +735,10 @@ void ProgressionLibraryPanel::onStopRecording()
 
     currentQuantizeResolution = 0.0;
 
-    double maxEnd = 0.0;
-    for (const auto& c : pendingProgression.chords)
-        maxEnd = juce::jmax (maxEnd, c.startBeat + c.durationBeats);
-    pendingProgression.totalBeats = maxEnd;
+    // Round totalBeats up to the nearest bar (4 beats) to preserve trailing silence
+    pendingProgression.totalBeats = std::ceil (totalBeats / 4.0) * 4.0;
+    if (pendingProgression.totalBeats < 4.0)
+        pendingProgression.totalBeats = 4.0;
 
     enterEditing();
 }
