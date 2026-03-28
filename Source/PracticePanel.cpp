@@ -53,8 +53,7 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
                 onSaveVoicing (clickedChordMidiNotes, clickedChordVelocities);
         }
     };
-    voicingButton.setVisible (false);
-    addAndMakeVisible (voicingButton);
+    addChildComponent (voicingButton);
 
     customButton.onClick = [this] { onCustomToggle(); };
     addAndMakeVisible (customButton);
