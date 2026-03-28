@@ -763,6 +763,9 @@ void PracticePanel::updateUntimedPractice (const std::vector<int>& activeNotes)
     for (int n : activeNotes)
         playedPitchClasses.insert (n % 12);
 
+    // Track last attempt for proportional scoring on skip
+    lastAttemptPCs = playedPitchClasses;
+
     if (playedPitchClasses == targetPitchClasses)
     {
         challengeCompleted = true;
@@ -841,6 +844,9 @@ void PracticePanel::updateTimedPractice (const std::vector<int>& activeNotes)
             std::set<int> playedPitchClasses;
             for (int n : activeNotes)
                 playedPitchClasses.insert (n % 12);
+
+            // Track for proportional scoring on timeout
+            lastAttemptPCs = playedPitchClasses;
 
             // Only count as wrong if user played notes OUTSIDE the target set
             // (partial matches = building up the chord = fine)
@@ -962,15 +968,20 @@ void PracticePanel::enterPrepPhase()
 {
     timedPhase = TimedPhase::Prep;
 
-    // Score the play phase if user didn't get it right
+    // Score the play phase if user didn't get it right — proportional credit
     if (! playPhaseScored)
     {
+        std::set<int> targetPCs;
+        for (int n : targetNotes) targetPCs.insert (n % 12);
+        double proportion = lastAttemptPCs.empty() ? 0.0
+            : computeProportionalMatch (lastAttemptPCs, targetPCs);
+        int quality = proportionToQuality (proportion);
         processorRef.spacedRepetition.recordAttempt (
-            currentChallenge.voicingId, currentChallenge.keyIndex, 0);
-        lastQualityScore = 0;
+            currentChallenge.voicingId, currentChallenge.keyIndex, quality);
+        lastQualityScore = quality;
         feedbackLabel.setText ("Timeout!", juce::dontSendNotification);
         feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::danger));
-        timingFeedbackLabel.setText ("Q0 - Too slow", juce::dontSendNotification);
+        timingFeedbackLabel.setText ("Q" + juce::String (quality) + " - Too slow", juce::dontSendNotification);
         timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::danger));
         updateStats();
     }
@@ -1007,6 +1018,7 @@ void PracticePanel::enterPrepPhase()
 void PracticePanel::loadNextChallenge()
 {
     challengeCompleted = false;
+    lastAttemptPCs.clear();
 
     juce::String vid = practicingVoicingId.isNotEmpty() ? practicingVoicingId
                                                         : currentChallenge.voicingId;
@@ -1063,6 +1075,40 @@ int PracticePanel::computeQuality (double beatsElapsed, bool hadWrongAttempt)
     if (beatsElapsed < 1.0) return 4;
     if (beatsElapsed < 1.5) return 3;
     return 2;
+}
+
+double PracticePanel::computeProportionalMatch (const std::set<int>& playedPCs,
+                                                 const std::set<int>& targetPCs)
+{
+    if (targetPCs.empty()) return 0.0;
+
+    int correctCount = 0;
+    for (int pc : targetPCs)
+        if (playedPCs.count (pc) > 0)
+            correctCount++;
+
+    int extraCount = 0;
+    for (int pc : playedPCs)
+        if (targetPCs.count (pc) == 0)
+            extraCount++;
+
+    double proportion = static_cast<double> (correctCount) / static_cast<double> (targetPCs.size());
+    proportion -= 0.1 * extraCount;
+    return juce::jlimit (0.0, 1.0, proportion);
+}
+
+int PracticePanel::proportionToQuality (double proportion, double beatsElapsed)
+{
+    if (proportion >= 1.0)
+    {
+        if (beatsElapsed >= 0.0)
+            return computeQuality (beatsElapsed, false);
+        return 5;
+    }
+    if (proportion >= 0.75) return 3;
+    if (proportion >= 0.50) return 2;
+    if (proportion >= 0.25) return 1;
+    return 0;
 }
 
 void PracticePanel::updateKeyboardColours (const std::vector<int>& activeNotes)
@@ -1173,8 +1219,14 @@ void PracticePanel::onNext()
     {
         if (! playPhaseScored && timedPhase == TimedPhase::Play)
         {
+            // Proportional scoring from whatever was held
+            std::set<int> targetPCs;
+            for (int n : targetNotes) targetPCs.insert (n % 12);
+            double proportion = lastAttemptPCs.empty() ? 0.0
+                : computeProportionalMatch (lastAttemptPCs, targetPCs);
+            int quality = proportionToQuality (proportion);
             processorRef.spacedRepetition.recordAttempt (
-                currentChallenge.voicingId, currentChallenge.keyIndex, 0);
+                currentChallenge.voicingId, currentChallenge.keyIndex, quality);
             updateStats();
         }
         enterPrepPhase();
@@ -1183,8 +1235,14 @@ void PracticePanel::onNext()
     {
         if (! challengeCompleted)
         {
-            processorRef.spacedRepetition.recordFailure (
-                currentChallenge.voicingId, currentChallenge.keyIndex);
+            // Proportional scoring from last-held notes instead of flat failure
+            std::set<int> targetPCs;
+            for (int n : targetNotes) targetPCs.insert (n % 12);
+            double proportion = lastAttemptPCs.empty() ? 0.0
+                : computeProportionalMatch (lastAttemptPCs, targetPCs);
+            int quality = proportionToQuality (proportion);
+            processorRef.spacedRepetition.recordAttempt (
+                currentChallenge.voicingId, currentChallenge.keyIndex, quality);
             feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::danger));
             updateStats();
         }
@@ -1395,7 +1453,6 @@ void PracticePanel::loadProgressionChallenge (int keyIndex)
     practiceChart.clearNoteStates();
     practiceChart.setSelectedChord (0);
     practiceChart.setAllChordNoteStates (0, ProgressionChartComponent::NoteState::Target);
-    progressionHasWrongAttempt = false;
 
     // Load first chord's target notes
     const auto& chord = transposedProgression.chords[0];
@@ -1613,7 +1670,6 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
             }
 
             progressionChordIndex = targetChordIdx;
-            progressionHasWrongAttempt = false;
             const auto& chord = transposedProgression.chords[static_cast<size_t> (targetChordIdx)];
             targetNotes = chord.midiNotes;
             practiceChart.setSelectedChord (targetChordIdx);
@@ -1660,35 +1716,29 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
                 }
             }
 
-            // Track wrong notes (extras not in target)
-            for (int pc : playedPC)
-            {
-                if (targetPC.count (pc) == 0)
-                    progressionHasWrongAttempt = true;
-            }
-
-            if (playedPC == targetPC)
+            // Score using proportional match (exact or partial)
+            double proportion = computeProportionalMatch (playedPC, targetPC);
+            if (proportion > 0.0 && progressionTimedScored.count (targetChordIdx) == 0)
             {
                 progressionTimedScored.insert (targetChordIdx);
-                // Mark all notes as correct
-                practiceChart.setAllChordNoteStates (targetChordIdx, ProgressionChartComponent::NoteState::Correct);
+
+                // Mark individual notes as correct/missed
+                if (proportion >= 1.0)
+                    practiceChart.setAllChordNoteStates (targetChordIdx, ProgressionChartComponent::NoteState::Correct);
 
                 const auto& chord = transposedProgression.chords[static_cast<size_t> (targetChordIdx)];
                 double beatIntoChord = progressBeat - chord.startBeat;
-                int quality = computeQuality (beatIntoChord, false);
-
-                // Penalize if wrong notes were played at any point during this chord
-                if (progressionHasWrongAttempt)
-                    quality = juce::jmin (quality, 1);
+                int quality = proportionToQuality (proportion, beatIntoChord);
 
                 progressionQualitySum += quality;
                 if (quality >= 3)
                     progressionChordsCorrect++;
 
-                feedbackLabel.setText (progressionHasWrongAttempt ? "Wrong notes!" : "Correct!",
+                bool perfect = (proportion >= 1.0);
+                feedbackLabel.setText (perfect ? "Correct!" : juce::String (juce::roundToInt (proportion * 100)) + "% match",
                                       juce::dontSendNotification);
                 feedbackLabel.setColour (juce::Label::textColourId,
-                    juce::Colour (progressionHasWrongAttempt ? ChordyTheme::danger : ChordyTheme::success));
+                    juce::Colour (perfect ? ChordyTheme::success : ChordyTheme::qualitySlow));
 
                 juce::String qualityText;
                 juce::Colour qualityColour;
@@ -2216,21 +2266,17 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
     if (targetPC < 0) targetPC += 12;
 
     bool gotCorrect = false;
-    bool gotWrong = false;
 
     for (int pc : newNoteOns)
     {
         if (pc == targetPC)
             gotCorrect = true;
-        else
-            gotWrong = true;
     }
 
-    // Step 5: Score and advance
+    // Step 5: Score and advance — credit correct note even with extra notes
     if (gotCorrect)
     {
-        if (! gotWrong)
-            melodyNotesCorrect++;
+        melodyNotesCorrect++;
 
         practiceMLChart.setNoteState (melodyNoteIndex, MelodyChartComponent::NoteState::Correct);
         lastCorrectPC = targetPC;

@@ -51,6 +51,7 @@ struct Progression
     int timeSignatureNum = 4;
     int timeSignatureDen = 4;
     juce::MidiMessageSequence rawMidi; // original recording (beat-timestamped)
+    double quantizeResolution = 0.0;  // 0=raw, 1.0=beat, 0.5=half, 0.25=quarter
 
     bool isValid() const { return ! id.isEmpty() && ! chords.empty(); }
 };

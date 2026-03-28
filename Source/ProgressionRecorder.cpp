@@ -121,11 +121,13 @@ std::vector<ProgressionChord> ProgressionRecorder::analyzeChordChanges (
         // Detect chord change: a new note-on changed the active set
         if (! currentNoteSet.empty() && currentNoteSet != lastChordNotes)
         {
-            // Check if notes are being ADDED to an existing held chord
-            // (all previous notes still held + new note added)
-            bool isAccumulating = ! lastChordNotes.empty()
-                && std::includes (currentNoteSet.begin(), currentNoteSet.end(),
-                                  lastChordNotes.begin(), lastChordNotes.end());
+            // Check if ANY notes from the previous chord are still held.
+            // If so, the user is modifying the chord (replacing a note), not starting a new one.
+            // Only create a new chord when ALL previous notes were released first.
+            bool hasOverlap = false;
+            for (int n : lastChordNotes)
+                if (currentNoteSet.count (n) > 0) { hasOverlap = true; break; }
+            bool isAccumulating = ! lastChordNotes.empty() && hasOverlap;
 
             if (isAccumulating && ! chords.empty())
             {
@@ -311,5 +313,51 @@ std::vector<ProgressionChord> ProgressionRecorder::quantize (
             chord.durationBeats = resolution;
     }
 
+    return quantized;
+}
+
+//==============================================================================
+// MIDI Quantization (snap event timestamps to grid)
+//==============================================================================
+
+juce::MidiMessageSequence ProgressionRecorder::quantizeMidi (
+    const juce::MidiMessageSequence& rawMidi,
+    double resolution)
+{
+    if (rawMidi.getNumEvents() == 0 || resolution <= 0.0)
+        return rawMidi;
+
+    juce::MidiMessageSequence quantized;
+
+    for (int i = 0; i < rawMidi.getNumEvents(); ++i)
+    {
+        auto* evt = rawMidi.getEventPointer (i);
+        auto msg = evt->message;
+        double snapped = std::round (msg.getTimeStamp() / resolution) * resolution;
+        if (snapped < 0.0) snapped = 0.0;
+        msg.setTimeStamp (snapped);
+        quantized.addEvent (msg);
+    }
+
+    quantized.sort();
+
+    // Ensure note-off never precedes its paired note-on (enforce minimum duration)
+    quantized.updateMatchedPairs();
+    for (int i = 0; i < quantized.getNumEvents(); ++i)
+    {
+        auto* evt = quantized.getEventPointer (i);
+        if (evt->message.isNoteOn() && evt->noteOffObject != nullptr)
+        {
+            double onTime = evt->message.getTimeStamp();
+            double offTime = evt->noteOffObject->message.getTimeStamp();
+            if (offTime <= onTime)
+            {
+                evt->noteOffObject->message.setTimeStamp (onTime + resolution);
+            }
+        }
+    }
+
+    quantized.sort();
+    quantized.updateMatchedPairs();
     return quantized;
 }

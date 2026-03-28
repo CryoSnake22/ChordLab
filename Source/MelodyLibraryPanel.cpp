@@ -851,6 +851,9 @@ void MelodyLibraryPanel::onConfirmSave()
     for (auto& cc : pendingMelody.chordContexts)
         cc.name = cc.getDisplayName (pendingMelody.keyPitchClass);
 
+    // Store the quantize resolution for playback
+    pendingMelody.quantizeResolution = currentQuantizeResolution;
+
     // Remove old version if editing an existing melody (same ID)
     processorRef.melodyLibrary.removeMelody (pendingMelody.id);
     processorRef.melodyLibrary.addMelody (pendingMelody);
@@ -922,6 +925,7 @@ void MelodyLibraryPanel::onEditPlayToggle()
     if (pendingMelody.notes.empty())
         return;
 
+    pendingMelody.quantizeResolution = currentQuantizeResolution;
     int keyRoot = 60 + pendingMelody.keyPitchClass;
     processorRef.startMelodyPlayback (pendingMelody, keyRoot);
     editPlayButton.setButtonText ("Stop");

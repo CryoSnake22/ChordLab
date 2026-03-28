@@ -15,6 +15,10 @@ void SpacedRepetitionEngine::applySuccess (PracticeRecord& r)
     r.lastAttemptTime = currentTimeSeconds();
     r.intervalDays *= r.easeFactor;
     r.easeFactor = std::min (2.5, r.easeFactor + 0.1);
+    r.attemptHistory.push_back (5.0);
+    if (r.attemptHistory.size() > 100)
+        r.attemptHistory.erase (r.attemptHistory.begin(),
+            r.attemptHistory.begin() + static_cast<std::ptrdiff_t> (r.attemptHistory.size() - 100));
 }
 
 void SpacedRepetitionEngine::applyFailure (PracticeRecord& r)
@@ -23,6 +27,10 @@ void SpacedRepetitionEngine::applyFailure (PracticeRecord& r)
     r.lastAttemptTime = currentTimeSeconds();
     r.intervalDays = 1.0;
     r.easeFactor = std::max (1.3, r.easeFactor - 0.2);
+    r.attemptHistory.push_back (0.0);
+    if (r.attemptHistory.size() > 100)
+        r.attemptHistory.erase (r.attemptHistory.begin(),
+            r.attemptHistory.begin() + static_cast<std::ptrdiff_t> (r.attemptHistory.size() - 100));
 }
 
 void SpacedRepetitionEngine::applyQuality (PracticeRecord& r, int quality)
@@ -53,6 +61,11 @@ void SpacedRepetitionEngine::applyQuality (PracticeRecord& r, int quality)
     double q = static_cast<double> (quality);
     r.easeFactor += 0.1 - (5.0 - q) * (0.08 + (5.0 - q) * 0.02);
     r.easeFactor = std::max (1.3, r.easeFactor);
+
+    r.attemptHistory.push_back (static_cast<double> (quality));
+    if (r.attemptHistory.size() > 100)
+        r.attemptHistory.erase (r.attemptHistory.begin(),
+            r.attemptHistory.begin() + static_cast<std::ptrdiff_t> (r.attemptHistory.size() - 100));
 }
 
 double SpacedRepetitionEngine::getOverdueScore (const PracticeRecord& r,
@@ -222,9 +235,11 @@ SpacedRepetitionEngine::getStatsForVoicing (const juce::String& voicingId) const
     {
         if (r.voicingId == voicingId && r.keyIndex >= 0 && r.keyIndex < 12)
         {
-            stats[static_cast<size_t> (r.keyIndex)].successes = r.successes;
-            stats[static_cast<size_t> (r.keyIndex)].failures = r.failures;
-            stats[static_cast<size_t> (r.keyIndex)].lastQuality = r.lastResponseQuality;
+            auto idx = static_cast<size_t> (r.keyIndex);
+            stats[idx].successes = r.successes;
+            stats[idx].failures = r.failures;
+            stats[idx].lastQuality = r.lastResponseQuality;
+            stats[idx].recentQualities = r.attemptHistory;
         }
     }
     return stats;
@@ -248,6 +263,23 @@ int SpacedRepetitionEngine::getTotalSuccesses() const
 
 double SpacedRepetitionEngine::getAccuracy() const
 {
+    // Use recency-weighted accuracy if any history exists
+    double weightedSum = 0.0;
+    double weightTotal = 0.0;
+    for (const auto& r : records)
+    {
+        int n = static_cast<int> (r.attemptHistory.size());
+        for (int i = 0; i < n; ++i)
+        {
+            double weight = (i >= n - 10) ? 2.0 : 1.0;
+            weightedSum += (r.attemptHistory[static_cast<size_t> (i)] / 5.0) * weight;
+            weightTotal += weight;
+        }
+    }
+    if (weightTotal > 0.0)
+        return weightedSum / weightTotal;
+
+    // Legacy fallback
     int attempts = getTotalAttempts();
     if (attempts == 0)
         return 0.0;
@@ -266,6 +298,7 @@ static const juce::Identifier ID_lastAttempt ("lastAttempt");
 static const juce::Identifier ID_interval ("interval");
 static const juce::Identifier ID_ease ("ease");
 static const juce::Identifier ID_quality ("quality");
+static const juce::Identifier ID_attemptHistory ("attemptHistory");
 
 juce::ValueTree SpacedRepetitionEngine::toValueTree() const
 {
@@ -281,6 +314,16 @@ juce::ValueTree SpacedRepetitionEngine::toValueTree() const
         child.setProperty (ID_interval, r.intervalDays, nullptr);
         child.setProperty (ID_ease, r.easeFactor, nullptr);
         child.setProperty (ID_quality, r.lastResponseQuality, nullptr);
+
+        // Serialize attemptHistory as comma-separated doubles
+        if (! r.attemptHistory.empty())
+        {
+            juce::StringArray histParts;
+            for (double q : r.attemptHistory)
+                histParts.add (juce::String (q, 1));
+            child.setProperty (ID_attemptHistory, histParts.joinIntoString (","), nullptr);
+        }
+
         tree.appendChild (child, nullptr);
     }
     return tree;
@@ -303,6 +346,17 @@ void SpacedRepetitionEngine::fromValueTree (const juce::ValueTree& tree)
             r.intervalDays = child.getProperty (ID_interval, 1.0);
             r.easeFactor = child.getProperty (ID_ease, 2.5);
             r.lastResponseQuality = child.getProperty (ID_quality, -1);
+
+            // Deserialize attemptHistory
+            juce::String histStr = child.getProperty (ID_attemptHistory).toString();
+            if (histStr.isNotEmpty())
+            {
+                auto parts = juce::StringArray::fromTokens (histStr, ",", "");
+                for (const auto& p : parts)
+                    if (p.trim().isNotEmpty())
+                        r.attemptHistory.push_back (p.getDoubleValue());
+            }
+
             records.push_back (r);
         }
     }

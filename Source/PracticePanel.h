@@ -138,7 +138,6 @@ private:
     ProgressionChartComponent practiceChart;
     juce::Viewport practiceChartViewport;
     juce::ToggleButton progDetailedToggle { "Detailed" };
-    bool progressionHasWrongAttempt = false;
     double progressionTimedBeat = 0.0;           // current beat in timed progression practice
     std::set<int> progressionTimedScored;         // chord indices already scored this run
     int progressionChordsCorrect = 0;             // chords scored >= Q3
@@ -163,7 +162,12 @@ private:
     std::vector<int> backingChordNotes;
     int currentBackingChordIndex = -1;
 
+    std::set<int> lastAttemptPCs;  // last notes user played (for proportional scoring on skip/timeout)
+
     static int computeQuality (double beatsElapsed, bool hadWrongAttempt);
+    static double computeProportionalMatch (const std::set<int>& playedPCs,
+                                            const std::set<int>& targetPCs);
+    static int proportionToQuality (double proportion, double beatsElapsed = -1.0);
 
     void onStartStop();
     void onNext();

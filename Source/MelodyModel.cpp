@@ -160,6 +160,7 @@ static const juce::Identifier ID_bpm ("bpm");
 static const juce::Identifier ID_timeSigNum ("timeSigNum");
 static const juce::Identifier ID_timeSigDen ("timeSigDen");
 static const juce::Identifier ID_rawMidi ("rawMidi");
+static const juce::Identifier ID_quantizeResolution ("quantizeResolution");
 
 static const juce::Identifier ID_intervalFromKeyRoot ("intervalFromKeyRoot");
 static const juce::Identifier ID_startBeat ("startBeat");
@@ -267,6 +268,7 @@ juce::ValueTree MelodyLibrary::melodyToValueTree (const Melody& m)
     tree.setProperty (ID_timeSigNum, m.timeSignatureNum, nullptr);
     tree.setProperty (ID_timeSigDen, m.timeSignatureDen, nullptr);
     tree.setProperty (ID_rawMidi, midiSequenceToString (m.rawMidi), nullptr);
+    tree.setProperty (ID_quantizeResolution, m.quantizeResolution, nullptr);
 
     for (const auto& cc : m.chordContexts)
         tree.appendChild (chordContextToValueTree (cc), nullptr);
@@ -288,6 +290,7 @@ Melody MelodyLibrary::melodyFromValueTree (const juce::ValueTree& tree)
     m.timeSignatureNum = tree.getProperty (ID_timeSigNum, 4);
     m.timeSignatureDen = tree.getProperty (ID_timeSigDen, 4);
     m.rawMidi = stringToMidiSequence (tree.getProperty (ID_rawMidi).toString());
+    m.quantizeResolution = tree.getProperty (ID_quantizeResolution, 0.0);
 
     for (int i = 0; i < tree.getNumChildren(); ++i)
     {

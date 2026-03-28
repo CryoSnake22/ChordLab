@@ -14,6 +14,7 @@ struct PracticeRecord
     double intervalDays = 1.0;
     double easeFactor = 2.5;
     int lastResponseQuality = -1; // -1 = no data, 0-5 SM-2 quality
+    std::vector<double> attemptHistory; // per-attempt quality scores (0-5), capped at 100
 };
 
 struct PracticeChallenge
@@ -49,8 +50,24 @@ public:
         int successes = 0;
         int failures = 0;
         int lastQuality = -1;
+        std::vector<double> recentQualities;
         double accuracy() const
         {
+            if (! recentQualities.empty())
+            {
+                // Recency-weighted: most recent 10 get 2x weight, older get 1x
+                double weightedSum = 0.0;
+                double weightTotal = 0.0;
+                int n = static_cast<int> (recentQualities.size());
+                for (int i = 0; i < n; ++i)
+                {
+                    double weight = (i >= n - 10) ? 2.0 : 1.0;
+                    weightedSum += (recentQualities[static_cast<size_t> (i)] / 5.0) * weight;
+                    weightTotal += weight;
+                }
+                return weightTotal > 0.0 ? weightedSum / weightTotal : -1.0;
+            }
+            // Legacy fallback
             int total = successes + failures;
             return total > 0 ? static_cast<double> (successes) / total : -1.0;
         }

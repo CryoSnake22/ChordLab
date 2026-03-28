@@ -547,6 +547,12 @@ void AudioPluginAudioProcessor::loadLibrariesFromDisk()
 void AudioPluginAudioProcessor::startProgressionPlayback (const Progression& prog) {
   stopProgressionPlayback();
   playbackProgression = prog;
+
+  // Apply quantization to rawMidi for playback if not Raw mode
+  if (prog.quantizeResolution > 0.0)
+    playbackProgression.rawMidi = ProgressionRecorder::quantizeMidi (
+        prog.rawMidi, prog.quantizeResolution);
+
   playbackChordIndex = -1;
   playbackActiveNotes.clear();
   playbackSamplePos = 0.0;
@@ -582,6 +588,12 @@ void AudioPluginAudioProcessor::stopProgressionPlayback() {
 void AudioPluginAudioProcessor::startMelodyPlayback (const Melody& melody, int keyRootMidiNote) {
   stopMelodyPlayback();
   melodyPlaybackData = melody;
+
+  // Apply quantization to rawMidi for playback if not Raw mode
+  if (melody.quantizeResolution > 0.0)
+    melodyPlaybackData.rawMidi = ProgressionRecorder::quantizeMidi (
+        melody.rawMidi, melody.quantizeResolution);
+
   melodyPlaybackKeyRoot = keyRootMidiNote;
   melodyPlaybackNoteIndex = -1;
   melodyPlaybackActiveNote = -1;

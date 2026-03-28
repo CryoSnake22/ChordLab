@@ -32,6 +32,11 @@ public:
         double resolution,
         double totalBeats);
 
+    // Quantize raw MIDI timestamps to a grid resolution (in beats)
+    static juce::MidiMessageSequence quantizeMidi (
+        const juce::MidiMessageSequence& rawMidi,
+        double resolution);
+
     // Inject a MIDI event directly (e.g. for pre-held notes at beat 0)
     void injectEvent (const juce::MidiMessage& msg);
 

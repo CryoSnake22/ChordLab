@@ -880,6 +880,9 @@ void ProgressionLibraryPanel::onConfirmSave()
         default: pendingProgression.mode = "Major"; break;
     }
 
+    // Store the quantize resolution for playback
+    pendingProgression.quantizeResolution = currentQuantizeResolution;
+
     // Remove old version if editing an existing progression (same ID)
     processorRef.progressionLibrary.removeProgression (pendingProgression.id);
     processorRef.progressionLibrary.addProgression (pendingProgression);
@@ -962,6 +965,7 @@ void ProgressionLibraryPanel::onEditPlayToggle()
     }
     else
     {
+        pendingProgression.quantizeResolution = currentQuantizeResolution;
         processorRef.startProgressionPlayback (pendingProgression);
         editPlayBtn.setButtonText ("Stop");
     }
