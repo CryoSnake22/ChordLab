@@ -185,6 +185,17 @@ AudioPluginAudioProcessorEditor::AudioPluginAudioProcessorEditor(
   // Practice panel
   addAndMakeVisible(practicePanel);
 
+  // Save/See voicing from progression chord click
+  practicePanel.onSaveVoicing = [this](const std::vector<int>& notes, const std::vector<int>& velocities) {
+    auto voicing = VoicingLibrary::createFromNotes (notes, "", velocities);
+    libraryTabs.setCurrentTabIndex (0);
+    voicingLibraryPanel.enterConfirmingWithVoicing (voicing);
+  };
+  practicePanel.onSeeVoicing = [this](const juce::String& voicingId) {
+    libraryTabs.setCurrentTabIndex (0);
+    voicingLibraryPanel.selectVoicingById (voicingId);
+  };
+
   // Tempo bar — settings toggle
   settingsToggle.setButtonText("Hide Settings");
   settingsToggle.onClick = [this] {

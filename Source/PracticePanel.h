@@ -79,6 +79,17 @@ private:
     juce::String countdownText;
     juce::String clickedChordName;
     int clickedChordFrames = 0;
+
+public:
+    // Voicing save/see from progression chord click
+    juce::TextButton voicingButton { "Save Voicing" };
+    std::function<void (const std::vector<int>& notes, const std::vector<int>& velocities)> onSaveVoicing;
+    std::function<void (const juce::String& voicingId)> onSeeVoicing;
+
+private:
+    juce::String clickedVoicingMatchId;
+    std::vector<int> clickedChordMidiNotes;
+    std::vector<int> clickedChordVelocities;
     AudioPluginAudioProcessor& processorRef;
     ChordyKeyboardComponent& keyboardRef;
 

@@ -36,6 +36,10 @@ public:
     // Callback for stats chart key preview (notes + velocities)
     std::function<void (const std::vector<int>& notes, const std::vector<int>& velocities)> onKeyPreview;
 
+    // Public methods for external voicing creation
+    void enterConfirmingWithVoicing (const Voicing& v);
+    void selectVoicingById (const juce::String& id);
+
 private:
     // ListBoxModel
     int getNumRows() override;
@@ -52,6 +56,7 @@ private:
     juce::ComboBox qualityFilter;
     juce::ListBox voicingList;
     juce::TextButton recordButton { "Record" };
+    juce::TextButton playButton { "Play" };
     juce::TextButton deleteButton { "Delete" };
     VoicingStatsChart statsChart;
 

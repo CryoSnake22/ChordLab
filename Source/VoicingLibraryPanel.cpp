@@ -129,6 +129,17 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     recordButton.onClick = [this] { onRecordToggle(); };
     addAndMakeVisible (recordButton);
 
+    playButton.onClick = [this] {
+        auto id = getSelectedVoicingId();
+        if (id.isEmpty()) return;
+        const auto* v = processorRef.voicingLibrary.getVoicing (id);
+        if (v == nullptr) return;
+        auto notes = VoicingLibrary::transposeToKey (*v, v->octaveReference);
+        if (onKeyPreview)
+            onKeyPreview (notes, v->velocities);
+    };
+    addAndMakeVisible (playButton);
+
     deleteButton.onClick = [this] { onDelete(); };
     deleteButton.setColour (juce::TextButton::buttonColourId, juce::Colour (ChordyTheme::dangerMuted));
     addAndMakeVisible (deleteButton);
@@ -206,6 +217,7 @@ void VoicingLibraryPanel::setNormalModeVisible (bool visible)
     qualityFilter.setVisible (visible);
     voicingList.setVisible (visible);
     recordButton.setVisible (visible);
+    playButton.setVisible (visible);
     deleteButton.setVisible (visible);
 }
 
@@ -253,6 +265,8 @@ void VoicingLibraryPanel::layoutNormalMode (juce::Rectangle<int> area)
     deleteButton.setBounds (bottomRow.removeFromRight (60));
     bottomRow.removeFromRight (4);
     recordButton.setBounds (bottomRow.removeFromRight (70));
+    bottomRow.removeFromRight (4);
+    playButton.setBounds (bottomRow.removeFromRight (50));
     area.removeFromBottom (4);
 
     // Stats chart between list and buttons
@@ -365,6 +379,7 @@ void VoicingLibraryPanel::refreshStatsChart()
 void VoicingLibraryPanel::setButtonsEnabled (bool enabled)
 {
     recordButton.setEnabled (enabled);
+    playButton.setEnabled (enabled);
     deleteButton.setEnabled (enabled);
 }
 
@@ -466,6 +481,32 @@ void VoicingLibraryPanel::finishRecording()
     populateConfirmFields();
     resized();
     repaint();
+}
+
+void VoicingLibraryPanel::enterConfirmingWithVoicing (const Voicing& v)
+{
+    pendingVoicing = v;
+    recordState = RecordState::Confirming;
+    recordingIndicator.setVisible (false);
+
+    setNormalModeVisible (false);
+    setConfirmModeVisible (true);
+    populateConfirmFields();
+    resized();
+    repaint();
+}
+
+void VoicingLibraryPanel::selectVoicingById (const juce::String& id)
+{
+    updateDisplayedVoicings();
+    for (int i = 0; i < static_cast<int> (displayedVoicings.size()); ++i)
+    {
+        if (displayedVoicings[static_cast<size_t> (i)].id == id)
+        {
+            voicingList.selectRow (i);
+            return;
+        }
+    }
 }
 
 void VoicingLibraryPanel::populateConfirmFields()

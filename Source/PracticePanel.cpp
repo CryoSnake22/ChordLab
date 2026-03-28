@@ -41,6 +41,21 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
     playButton.setEnabled (false);
     addAndMakeVisible (playButton);
 
+    voicingButton.onClick = [this] {
+        if (clickedVoicingMatchId.isNotEmpty())
+        {
+            if (onSeeVoicing)
+                onSeeVoicing (clickedVoicingMatchId);
+        }
+        else if (! clickedChordMidiNotes.empty())
+        {
+            if (onSaveVoicing)
+                onSaveVoicing (clickedChordMidiNotes, clickedChordVelocities);
+        }
+    };
+    voicingButton.setVisible (false);
+    addAndMakeVisible (voicingButton);
+
     customButton.onClick = [this] { onCustomToggle(); };
     addAndMakeVisible (customButton);
 
@@ -105,9 +120,11 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
 
         if (chordIdx < 0 || chordIdx >= static_cast<int> (previewProgression.chords.size()))
         {
-            // Deselect: clear keyboard
+            // Deselect: clear keyboard + hide voicing button
             keyboardRef.clearAllColours();
             keyboardRef.repaint();
+            voicingButton.setVisible (false);
+            resized();
             return;
         }
 
@@ -164,6 +181,27 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
             for (int note : notes)
                 processorRef.addPreviewMidi (juce::MidiMessage::noteOff (ch, note, 0.0f));
         });
+
+        // Check if these notes match an existing voicing
+        clickedChordMidiNotes = activeNotesMidi;
+        clickedChordVelocities.clear();
+        for (float v : activeVelocities)
+            clickedChordVelocities.push_back (static_cast<int> (v * 127.0f));
+
+        juce::String displayName;
+        auto* match = processorRef.voicingLibrary.findByNotes (activeNotesMidi, displayName);
+        if (match != nullptr)
+        {
+            clickedVoicingMatchId = match->id;
+            voicingButton.setButtonText ("See Voicing");
+        }
+        else
+        {
+            clickedVoicingMatchId = {};
+            voicingButton.setButtonText ("Save Voicing");
+        }
+        voicingButton.setVisible (true);
+        resized();
     };
 
     // Click-to-play for melody note preview + highlight keyboard
@@ -284,6 +322,13 @@ void PracticePanel::resized()
     buttonRow.removeFromLeft (4);
     customButton.setBounds (buttonRow);
     area.removeFromBottom (4);
+
+    // Voicing save/see button (only visible when chord clicked in progression preview)
+    if (voicingButton.isVisible())
+    {
+        voicingButton.setBounds (area.removeFromBottom (26));
+        area.removeFromBottom (4);
+    }
 
     // Target label
     targetLabel.setBounds (area.removeFromBottom (24));
@@ -705,6 +750,7 @@ void PracticePanel::clearChartPreview()
 {
     showingProgPreview = false;
     showingMelPreview = false;
+    voicingButton.setVisible (false);
     practiceChart.setProgressionReadOnly (nullptr);
     practiceMLChart.setMelodyReadOnly (nullptr);
     resized();
