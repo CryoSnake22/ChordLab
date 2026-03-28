@@ -1612,13 +1612,26 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
         {
             progressionChordsTotal = static_cast<int> (transposedProgression.chords.size());
 
-            // Score any remaining unscored chords as Q0
+            // Score any remaining unscored chords — proportional credit for partial hits
             for (int ci = 0; ci < progressionChordsTotal; ++ci)
             {
                 if (progressionTimedScored.count (ci) == 0)
                 {
-                    progressionQualitySum += 0; // missed
-                    practiceChart.setAllChordNoteStates (ci, ProgressionChartComponent::NoteState::Missed);
+                    const auto& missedChord = transposedProgression.chords[static_cast<size_t> (ci)];
+                    int hitCount = 0;
+                    for (int ni = 0; ni < static_cast<int> (missedChord.midiNotes.size()); ++ni)
+                    {
+                        if (practiceChart.getNoteState (ci, ni) == ProgressionChartComponent::NoteState::Correct)
+                            hitCount++;
+                        else
+                            practiceChart.setNoteState (ci, ni, ProgressionChartComponent::NoteState::Missed);
+                    }
+                    double proportion = missedChord.midiNotes.empty() ? 0.0
+                        : static_cast<double> (hitCount) / static_cast<double> (missedChord.midiNotes.size());
+                    int q = proportionToQuality (proportion);
+                    progressionQualitySum += q;
+                    if (q >= 3)
+                        progressionChordsCorrect++;
                 }
             }
 
@@ -1658,14 +1671,35 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
         // Update current chord if it changed — score missed chords
         if (targetChordIdx >= 0 && targetChordIdx != progressionChordIndex)
         {
-            // Any chords between the old and new index that weren't scored = missed (Q0)
+            // Any chords between the old and new index that weren't scored — proportional credit
             for (int ci = progressionChordIndex; ci < targetChordIdx; ++ci)
             {
                 if (progressionTimedScored.count (ci) == 0)
                 {
                     progressionTimedScored.insert (ci);
-                    progressionQualitySum += 0; // Q0 timeout
-                    practiceChart.setAllChordNoteStates (ci, ProgressionChartComponent::NoteState::Missed);
+
+                    // Check which notes were hit via real-time per-note states
+                    const auto& missedChord = transposedProgression.chords[static_cast<size_t> (ci)];
+                    std::set<int> missedTargetPC;
+                    for (int n : missedChord.midiNotes) missedTargetPC.insert (n % 12);
+
+                    // Count how many target PCs were marked Correct in the chart
+                    int hitCount = 0;
+                    for (int ni = 0; ni < static_cast<int> (missedChord.midiNotes.size()); ++ni)
+                    {
+                        auto stIt = practiceChart.getNoteState (ci, ni);
+                        if (stIt == ProgressionChartComponent::NoteState::Correct)
+                            hitCount++;
+                        else
+                            practiceChart.setNoteState (ci, ni, ProgressionChartComponent::NoteState::Missed);
+                    }
+
+                    double proportion = missedTargetPC.empty() ? 0.0
+                        : static_cast<double> (hitCount) / static_cast<double> (missedChord.midiNotes.size());
+                    int quality = proportionToQuality (proportion);
+                    progressionQualitySum += quality;
+                    if (quality >= 3)
+                        progressionChordsCorrect++;
                 }
             }
 
@@ -1716,29 +1750,22 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
                 }
             }
 
-            // Score using proportional match (exact or partial)
-            double proportion = computeProportionalMatch (playedPC, targetPC);
-            if (proportion > 0.0 && progressionTimedScored.count (targetChordIdx) == 0)
+            // Score on exact pitch-class match (user must play all notes)
+            if (playedPC == targetPC && progressionTimedScored.count (targetChordIdx) == 0)
             {
                 progressionTimedScored.insert (targetChordIdx);
-
-                // Mark individual notes as correct/missed
-                if (proportion >= 1.0)
-                    practiceChart.setAllChordNoteStates (targetChordIdx, ProgressionChartComponent::NoteState::Correct);
+                practiceChart.setAllChordNoteStates (targetChordIdx, ProgressionChartComponent::NoteState::Correct);
 
                 const auto& chord = transposedProgression.chords[static_cast<size_t> (targetChordIdx)];
                 double beatIntoChord = progressBeat - chord.startBeat;
-                int quality = proportionToQuality (proportion, beatIntoChord);
+                int quality = computeQuality (beatIntoChord, false);
 
                 progressionQualitySum += quality;
                 if (quality >= 3)
                     progressionChordsCorrect++;
 
-                bool perfect = (proportion >= 1.0);
-                feedbackLabel.setText (perfect ? "Correct!" : juce::String (juce::roundToInt (proportion * 100)) + "% match",
-                                      juce::dontSendNotification);
-                feedbackLabel.setColour (juce::Label::textColourId,
-                    juce::Colour (perfect ? ChordyTheme::success : ChordyTheme::qualitySlow));
+                feedbackLabel.setText ("Correct!", juce::dontSendNotification);
+                feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
 
                 juce::String qualityText;
                 juce::Colour qualityColour;

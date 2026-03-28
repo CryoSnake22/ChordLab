@@ -28,6 +28,7 @@ public:
     // Per-chord per-note state tracking for practice feedback
     enum class NoteState { Default, Target, Correct, Missed };
     void setNoteState (int chordIndex, int noteIndex, NoteState state);
+    NoteState getNoteState (int chordIndex, int noteIndex) const;
     void setAllChordNoteStates (int chordIndex, NoteState state);
     void clearNoteStates();
 

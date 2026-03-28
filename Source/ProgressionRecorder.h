@@ -4,6 +4,16 @@
 #include "VoicingModel.h"
 #include <juce_audio_basics/juce_audio_basics.h>
 #include <set>
+#include <map>
+
+// Individual note extracted from raw MIDI (used internally by analysis pipeline)
+struct ProgressionNote
+{
+    int midiNote = 0;
+    int velocity = 100;
+    double startBeat = 0.0;
+    double durationBeats = 0.5;
+};
 
 class ProgressionRecorder
 {
@@ -21,7 +31,16 @@ public:
     // After stopRecording(), retrieve the raw MIDI sequence (beat-timestamped)
     const juce::MidiMessageSequence& getRawMidi() const { return rawMidi; }
 
-    // Analyze raw MIDI into chord changes
+    // Extract individual notes from raw MIDI (per-note start/duration)
+    static std::vector<ProgressionNote> extractNotes (
+        const juce::MidiMessageSequence& midi);
+
+    // Group individual notes into chords by temporal overlap
+    static std::vector<ProgressionChord> groupNotesIntoChords (
+        const std::vector<ProgressionNote>& notes,
+        const VoicingLibrary* voicingLibrary);
+
+    // Analyze raw MIDI into chord changes (uses extractNotes + groupNotesIntoChords)
     static std::vector<ProgressionChord> analyzeChordChanges (
         const juce::MidiMessageSequence& midi,
         const VoicingLibrary* voicingLibrary);

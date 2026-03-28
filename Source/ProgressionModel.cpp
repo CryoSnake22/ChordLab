@@ -108,6 +108,8 @@ static const juce::Identifier ID_startBeat ("startBeat");
 static const juce::Identifier ID_durationBeats ("durationBeats");
 static const juce::Identifier ID_midiNotes ("midiNotes");
 static const juce::Identifier ID_midiVelocities ("midiVelocities");
+static const juce::Identifier ID_noteStartBeats ("noteStartBeats");
+static const juce::Identifier ID_noteDurations ("noteDurations");
 static const juce::Identifier ID_rawMidi ("rawMidi");
 static const juce::Identifier ID_quantizeResolution ("quantizeResolution");
 
@@ -128,6 +130,27 @@ static std::vector<int> stringToInts (const juce::String& s)
         auto trimmed = part.trim();
         if (trimmed.isNotEmpty())
             result.push_back (trimmed.getIntValue());
+    }
+    return result;
+}
+
+static juce::String doublesToString (const std::vector<double>& v)
+{
+    juce::StringArray parts;
+    for (double d : v)
+        parts.add (juce::String (d, 6));
+    return parts.joinIntoString (",");
+}
+
+static std::vector<double> stringToDoubles (const juce::String& s)
+{
+    std::vector<double> result;
+    auto parts = juce::StringArray::fromTokens (s, ",", "");
+    for (const auto& part : parts)
+    {
+        auto trimmed = part.trim();
+        if (trimmed.isNotEmpty())
+            result.push_back (trimmed.getDoubleValue());
     }
     return result;
 }
@@ -189,6 +212,10 @@ juce::ValueTree ProgressionLibrary::chordToValueTree (const ProgressionChord& c)
     tree.setProperty (ID_durationBeats, c.durationBeats, nullptr);
     tree.setProperty (ID_midiNotes, intsToString (c.midiNotes), nullptr);
     tree.setProperty (ID_midiVelocities, intsToString (c.midiVelocities), nullptr);
+    if (! c.noteStartBeats.empty())
+        tree.setProperty (ID_noteStartBeats, doublesToString (c.noteStartBeats), nullptr);
+    if (! c.noteDurations.empty())
+        tree.setProperty (ID_noteDurations, doublesToString (c.noteDurations), nullptr);
     return tree;
 }
 
@@ -205,6 +232,29 @@ ProgressionChord ProgressionLibrary::chordFromValueTree (const juce::ValueTree& 
     c.durationBeats = tree.getProperty (ID_durationBeats, 4.0);
     c.midiNotes = stringToInts (tree.getProperty (ID_midiNotes).toString());
     c.midiVelocities = stringToInts (tree.getProperty (ID_midiVelocities).toString());
+
+    // Per-note timing (backward compat: fill from chord-level if missing)
+    juce::String nsStr = tree.getProperty (ID_noteStartBeats).toString();
+    juce::String ndStr = tree.getProperty (ID_noteDurations).toString();
+    if (nsStr.isNotEmpty())
+        c.noteStartBeats = stringToDoubles (nsStr);
+    if (ndStr.isNotEmpty())
+        c.noteDurations = stringToDoubles (ndStr);
+
+    // Fallback: if per-note timing is missing, fill from chord-level timing
+    if (c.noteStartBeats.size() != c.midiNotes.size())
+    {
+        c.noteStartBeats.clear();
+        for (size_t i = 0; i < c.midiNotes.size(); ++i)
+            c.noteStartBeats.push_back (c.startBeat);
+    }
+    if (c.noteDurations.size() != c.midiNotes.size())
+    {
+        c.noteDurations.clear();
+        for (size_t i = 0; i < c.midiNotes.size(); ++i)
+            c.noteDurations.push_back (c.durationBeats);
+    }
+
     return c;
 }
 

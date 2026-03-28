@@ -58,6 +58,12 @@ void ProgressionChartComponent::setNoteState (int chordIndex, int noteIndex, Not
     repaint();
 }
 
+ProgressionChartComponent::NoteState ProgressionChartComponent::getNoteState (int chordIndex, int noteIndex) const
+{
+    auto it = noteStates.find ({chordIndex, noteIndex});
+    return (it != noteStates.end()) ? it->second : NoteState::Default;
+}
+
 void ProgressionChartComponent::setAllChordNoteStates (int chordIndex, NoteState state)
 {
     auto* prog = getProgression();
@@ -333,6 +339,15 @@ void ProgressionChartComponent::mouseDrag (const juce::MouseEvent& e)
                 newDuration = maxEnd - chord.startBeat;
         }
 
+        // Scale per-note durations proportionally
+        double oldDuration = chord.durationBeats;
+        if (oldDuration > 0.0 && ! chord.noteDurations.empty())
+        {
+            double scale = newDuration / oldDuration;
+            for (auto& d : chord.noteDurations)
+                d = std::max (0.05, d * scale);
+        }
+
         chord.durationBeats = newDuration;
     }
     else if (dragEdge == DragEdge::Left)
@@ -357,6 +372,11 @@ void ProgressionChartComponent::mouseDrag (const juce::MouseEvent& e)
             newStart = endBeat - quantizeGrid;
             newDuration = quantizeGrid;
         }
+
+        // Shift per-note start beats by the same delta
+        double delta = newStart - chord.startBeat;
+        for (auto& s : chord.noteStartBeats)
+            s += delta;
 
         chord.startBeat = newStart;
         chord.durationBeats = newDuration;
@@ -675,9 +695,15 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
                 default:                 noteColour = ChordyTheme::melodyNoteBg; break;
             }
 
+            // Use per-note timing if available, otherwise fall back to chord timing
+            double noteStart = (static_cast<size_t> (ni) < chord.noteStartBeats.size())
+                ? chord.noteStartBeats[static_cast<size_t> (ni)] : chord.startBeat;
+            double noteDur = (static_cast<size_t> (ni) < chord.noteDurations.size())
+                ? chord.noteDurations[static_cast<size_t> (ni)] : chord.durationBeats;
+
             for (int row = startRow; row <= endRow; ++row)
             {
-                auto rect = getNoteDetailRect (midiNote, chord.startBeat, chord.durationBeats,
+                auto rect = getNoteDetailRect (midiNote, noteStart, noteDur,
                                                minMidi, maxMidi, row);
                 if (rect.isEmpty()) continue;
 

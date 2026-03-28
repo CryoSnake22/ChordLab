@@ -61,207 +61,189 @@ void ProgressionRecorder::processBlock (const juce::MidiBuffer& midi, int numSam
 }
 
 //==============================================================================
-// Chord Change Detection
+// Note Extraction (Phase 1 — like analyzeMelodyNotes)
+//==============================================================================
+
+std::vector<ProgressionNote> ProgressionRecorder::extractNotes (
+    const juce::MidiMessageSequence& midi)
+{
+    std::vector<ProgressionNote> result;
+
+    // Track note-ons to match with note-offs
+    std::map<int, std::pair<double, int>> activeNotes; // note -> (startBeat, velocity)
+
+    for (int i = 0; i < midi.getNumEvents(); ++i)
+    {
+        auto* evt = midi.getEventPointer (i);
+        auto& msg = evt->message;
+
+        if (msg.isController())
+            continue;
+
+        if (msg.isNoteOn() && msg.getVelocity() > 0)
+        {
+            activeNotes[msg.getNoteNumber()] = { msg.getTimeStamp(), msg.getVelocity() };
+        }
+        else if (msg.isNoteOff() || (msg.isNoteOn() && msg.getVelocity() == 0))
+        {
+            auto it = activeNotes.find (msg.getNoteNumber());
+            if (it != activeNotes.end())
+            {
+                ProgressionNote note;
+                note.midiNote = msg.getNoteNumber();
+                note.startBeat = it->second.first;
+                note.durationBeats = std::max (0.05, msg.getTimeStamp() - it->second.first);
+                note.velocity = it->second.second;
+                result.push_back (note);
+                activeNotes.erase (it);
+            }
+        }
+    }
+
+    // Sort by start beat, then by MIDI note number
+    std::sort (result.begin(), result.end(),
+               [] (const ProgressionNote& a, const ProgressionNote& b)
+               {
+                   if (std::abs (a.startBeat - b.startBeat) > 0.001)
+                       return a.startBeat < b.startBeat;
+                   return a.midiNote < b.midiNote;
+               });
+
+    return result;
+}
+
+//==============================================================================
+// Chord Grouping (Phase 2 — group overlapping notes into chords)
+//==============================================================================
+
+std::vector<ProgressionChord> ProgressionRecorder::groupNotesIntoChords (
+    const std::vector<ProgressionNote>& notes,
+    const VoicingLibrary* voicingLibrary)
+{
+    std::vector<ProgressionChord> chords;
+    if (notes.empty())
+        return chords;
+
+    // Group notes by temporal overlap: a note joins the current chord
+    // if its startBeat falls before any existing note's endBeat
+    struct ChordGroup
+    {
+        std::vector<size_t> noteIndices;
+        double earliestStart = 1e9;
+        double latestEnd = 0.0;
+    };
+
+    std::vector<ChordGroup> groups;
+    ChordGroup currentGroup;
+
+    for (size_t i = 0; i < notes.size(); ++i)
+    {
+        const auto& n = notes[i];
+        double noteEnd = n.startBeat + n.durationBeats;
+
+        if (currentGroup.noteIndices.empty() || n.startBeat < currentGroup.latestEnd)
+        {
+            // Note overlaps with current group
+            currentGroup.noteIndices.push_back (i);
+            currentGroup.earliestStart = std::min (currentGroup.earliestStart, n.startBeat);
+            currentGroup.latestEnd = std::max (currentGroup.latestEnd, noteEnd);
+        }
+        else
+        {
+            // Gap detected — finalize current group, start new one
+            groups.push_back (currentGroup);
+            currentGroup = {};
+            currentGroup.noteIndices.push_back (i);
+            currentGroup.earliestStart = n.startBeat;
+            currentGroup.latestEnd = noteEnd;
+        }
+    }
+    if (! currentGroup.noteIndices.empty())
+        groups.push_back (currentGroup);
+
+    // Convert each group into a ProgressionChord
+    for (const auto& group : groups)
+    {
+        ProgressionChord chord;
+        chord.startBeat = group.earliestStart;
+        chord.durationBeats = group.latestEnd - group.earliestStart;
+        if (chord.durationBeats <= 0.0)
+            chord.durationBeats = 0.5;
+
+        // Collect notes into parallel arrays
+        struct NoteEntry { int midi; int vel; double start; double dur; };
+        std::vector<NoteEntry> entries;
+        for (size_t idx : group.noteIndices)
+        {
+            const auto& n = notes[idx];
+            entries.push_back ({ n.midiNote, n.velocity, n.startBeat, n.durationBeats });
+        }
+
+        // Sort by MIDI note number
+        std::sort (entries.begin(), entries.end(),
+                   [] (const NoteEntry& a, const NoteEntry& b) { return a.midi < b.midi; });
+
+        for (const auto& e : entries)
+        {
+            chord.midiNotes.push_back (e.midi);
+            chord.midiVelocities.push_back (e.vel);
+            chord.noteStartBeats.push_back (e.start);
+            chord.noteDurations.push_back (e.dur);
+        }
+
+        // Compute intervals from bass note
+        if (! chord.midiNotes.empty())
+        {
+            int bassNote = chord.midiNotes[0];
+            chord.rootPitchClass = bassNote % 12;
+            for (int note : chord.midiNotes)
+                chord.intervals.push_back (note - bassNote);
+        }
+
+        // Detect chord quality
+        if (voicingLibrary != nullptr)
+        {
+            juce::String displayName;
+            auto* match = voicingLibrary->findByNotes (chord.midiNotes, displayName);
+            if (match != nullptr)
+            {
+                chord.linkedVoicingId = match->id;
+                chord.name = match->name;
+                chord.quality = match->quality;
+                chord.alterations = match->alterations;
+                chord.rootPitchClass = match->rootPitchClass;
+            }
+        }
+
+        if (chord.name.isEmpty())
+        {
+            auto result = ChordDetector::detect (chord.midiNotes);
+            if (result.isValid())
+            {
+                chord.rootPitchClass = result.rootPitchClass;
+                chord.quality = result.quality;
+                chord.name = result.displayName;
+            }
+            else if (! chord.midiNotes.empty())
+                chord.name = ChordDetector::noteNameFromPitchClass (chord.rootPitchClass) + "?";
+        }
+
+        chords.push_back (chord);
+    }
+
+    return chords;
+}
+
+//==============================================================================
+// Chord Change Detection (uses extractNotes + groupNotesIntoChords)
 //==============================================================================
 
 std::vector<ProgressionChord> ProgressionRecorder::analyzeChordChanges (
     const juce::MidiMessageSequence& midi,
     const VoicingLibrary* voicingLibrary)
 {
-    std::vector<ProgressionChord> chords;
-
-    if (midi.getNumEvents() == 0)
-        return chords;
-
-    // Walk through events tracking which notes are currently held
-    std::map<int, int> activeNotes;  // note number -> velocity
-    std::set<int> lastChordNotes;
-    double chordStartBeat = 0.0;
-
-    for (int i = 0; i < midi.getNumEvents(); ++i)
-    {
-        auto* evt = midi.getEventPointer (i);
-        auto& msg = evt->message;
-        double beatTime = msg.getTimeStamp();
-
-        // Skip pedal events for chord analysis (they're preserved in rawMidi)
-        if (msg.isController())
-            continue;
-
-        bool isNoteOn = msg.isNoteOn() && msg.getVelocity() > 0;
-
-        if (isNoteOn)
-        {
-            activeNotes[msg.getNoteNumber()] = msg.getVelocity();
-        }
-        else if (msg.isNoteOff() || (msg.isNoteOn() && msg.getVelocity() == 0))
-        {
-            activeNotes.erase (msg.getNoteNumber());
-        }
-
-        // Build current note set for comparison
-        std::set<int> currentNoteSet;
-        for (const auto& pair : activeNotes)
-            currentNoteSet.insert (pair.first);
-
-        // Only detect chord changes on note-ON events (not releases).
-        // Releasing notes from a chord should NOT create intermediate chords.
-        if (! isNoteOn)
-        {
-            // When all notes release, close the current chord
-            if (currentNoteSet.empty() && ! lastChordNotes.empty())
-            {
-                if (! chords.empty())
-                    chords.back().durationBeats = beatTime - chordStartBeat;
-                lastChordNotes.clear();
-            }
-            continue;
-        }
-
-        // Detect chord change: a new note-on changed the active set
-        if (! currentNoteSet.empty() && currentNoteSet != lastChordNotes)
-        {
-            // Check if ANY notes from the previous chord are still held.
-            // If so, the user is modifying the chord (replacing a note), not starting a new one.
-            // Only create a new chord when ALL previous notes were released first.
-            bool hasOverlap = false;
-            for (int n : lastChordNotes)
-                if (currentNoteSet.count (n) > 0) { hasOverlap = true; break; }
-            bool isAccumulating = ! lastChordNotes.empty() && hasOverlap;
-
-            if (isAccumulating && ! chords.empty())
-            {
-                // Extend the current chord's notes instead of starting a new one
-                auto& cur = chords.back();
-                cur.midiNotes.clear();
-                cur.midiVelocities.clear();
-                for (const auto& pair : activeNotes)
-                {
-                    cur.midiNotes.push_back (pair.first);
-                    cur.midiVelocities.push_back (pair.second);
-                }
-                // Sort by note number
-                for (size_t a = 0; a + 1 < cur.midiNotes.size(); ++a)
-                    for (size_t b = a + 1; b < cur.midiNotes.size(); ++b)
-                        if (cur.midiNotes[a] > cur.midiNotes[b])
-                        {
-                            std::swap (cur.midiNotes[a], cur.midiNotes[b]);
-                            std::swap (cur.midiVelocities[a], cur.midiVelocities[b]);
-                        }
-
-                // Recompute intervals and re-detect chord
-                cur.intervals.clear();
-                int bassNote = cur.midiNotes[0];
-                cur.rootPitchClass = bassNote % 12;
-                for (int note : cur.midiNotes)
-                    cur.intervals.push_back (note - bassNote);
-
-                cur.name = {};
-                cur.linkedVoicingId = {};
-                if (voicingLibrary != nullptr)
-                {
-                    juce::String displayName;
-                    auto* match = voicingLibrary->findByNotes (cur.midiNotes, displayName);
-                    if (match != nullptr)
-                    {
-                        cur.linkedVoicingId = match->id;
-                        cur.name = match->name;
-                        cur.quality = match->quality;
-                        cur.alterations = match->alterations;
-                        cur.rootPitchClass = match->rootPitchClass;
-                    }
-                }
-                if (cur.name.isEmpty())
-                {
-                    auto result = ChordDetector::detect (cur.midiNotes);
-                    if (result.isValid())
-                    {
-                        cur.rootPitchClass = result.rootPitchClass;
-                        cur.quality = result.quality;
-                        cur.name = result.displayName;
-                    }
-                    else
-                        cur.name = ChordDetector::noteNameFromPitchClass (cur.rootPitchClass) + "?";
-                }
-
-                lastChordNotes = currentNoteSet;
-            }
-            else
-            {
-                // New chord — close previous and create new
-                if (! lastChordNotes.empty() && ! chords.empty())
-                    chords.back().durationBeats = beatTime - chordStartBeat;
-
-                std::vector<int> noteVec;
-                std::vector<int> velVec;
-                for (const auto& pair : activeNotes)
-                {
-                    noteVec.push_back (pair.first);
-                    velVec.push_back (pair.second);
-                }
-                for (size_t a = 0; a + 1 < noteVec.size(); ++a)
-                    for (size_t b = a + 1; b < noteVec.size(); ++b)
-                        if (noteVec[a] > noteVec[b])
-                        {
-                            std::swap (noteVec[a], noteVec[b]);
-                            std::swap (velVec[a], velVec[b]);
-                        }
-
-                ProgressionChord chord;
-                chord.midiNotes = noteVec;
-                chord.midiVelocities = velVec;
-                chord.startBeat = beatTime;
-                chord.durationBeats = 0.0;
-
-                int bassNote = noteVec[0];
-                chord.rootPitchClass = bassNote % 12;
-                for (int note : noteVec)
-                    chord.intervals.push_back (note - bassNote);
-
-                if (voicingLibrary != nullptr)
-                {
-                    juce::String displayName;
-                    auto* match = voicingLibrary->findByNotes (noteVec, displayName);
-                    if (match != nullptr)
-                    {
-                        chord.linkedVoicingId = match->id;
-                        chord.name = match->name;
-                        chord.quality = match->quality;
-                        chord.alterations = match->alterations;
-                        chord.rootPitchClass = match->rootPitchClass;
-                    }
-                }
-
-                if (chord.name.isEmpty())
-                {
-                    auto result = ChordDetector::detect (noteVec);
-                    if (result.isValid())
-                    {
-                        chord.rootPitchClass = result.rootPitchClass;
-                        chord.quality = result.quality;
-                        chord.name = result.displayName;
-                    }
-                    else
-                        chord.name = ChordDetector::noteNameFromPitchClass (chord.rootPitchClass) + "?";
-                }
-
-                chords.push_back (chord);
-                lastChordNotes = currentNoteSet;
-                chordStartBeat = beatTime;
-            }
-        }
-    }
-
-    // Close the last chord if it wasn't closed
-    if (! chords.empty() && chords.back().durationBeats <= 0.0)
-    {
-        double endBeat = midi.getEndTime();
-        chords.back().durationBeats = endBeat - chords.back().startBeat;
-        if (chords.back().durationBeats <= 0.0)
-            chords.back().durationBeats = 1.0;
-    }
-
-    return chords;
+    auto notes = extractNotes (midi);
+    return groupNotesIntoChords (notes, voicingLibrary);
 }
 
 //==============================================================================
@@ -271,17 +253,37 @@ std::vector<ProgressionChord> ProgressionRecorder::analyzeChordChanges (
 std::vector<ProgressionChord> ProgressionRecorder::quantize (
     const std::vector<ProgressionChord>& chords,
     double resolution,
-    double totalBeats)
+    double /*totalBeats*/)
 {
     if (chords.empty() || resolution <= 0.0)
         return chords;
 
     std::vector<ProgressionChord> quantized = chords;
 
-    // Snap each chord's startBeat to the nearest grid point
+    // Snap per-note timing to grid, then recompute chord-level timing
     for (auto& chord : quantized)
     {
-        chord.startBeat = std::round (chord.startBeat / resolution) * resolution;
+        for (size_t i = 0; i < chord.noteStartBeats.size(); ++i)
+        {
+            chord.noteStartBeats[i] = std::round (chord.noteStartBeats[i] / resolution) * resolution;
+            chord.noteDurations[i] = std::max (resolution,
+                std::round (chord.noteDurations[i] / resolution) * resolution);
+        }
+
+        // Recompute chord-level timing from per-note data
+        if (! chord.noteStartBeats.empty())
+        {
+            double minStart = *std::min_element (chord.noteStartBeats.begin(), chord.noteStartBeats.end());
+            double maxEnd = 0.0;
+            for (size_t i = 0; i < chord.noteStartBeats.size(); ++i)
+                maxEnd = std::max (maxEnd, chord.noteStartBeats[i] + chord.noteDurations[i]);
+            chord.startBeat = minStart;
+            chord.durationBeats = maxEnd - minStart;
+        }
+        else
+        {
+            chord.startBeat = std::round (chord.startBeat / resolution) * resolution;
+        }
     }
 
     // Remove duplicate positions (keep the last chord at each position)
@@ -291,22 +293,7 @@ std::vector<ProgressionChord> ProgressionRecorder::quantize (
             quantized.erase (quantized.begin() + static_cast<std::ptrdiff_t> (i - 1));
     }
 
-    // Recalculate durations to fill gaps
-    for (size_t i = 0; i + 1 < quantized.size(); ++i)
-    {
-        quantized[i].durationBeats = quantized[i + 1].startBeat - quantized[i].startBeat;
-    }
-
-    // Last chord fills to total duration (rounded to grid)
-    if (! quantized.empty())
-    {
-        double endBeat = std::ceil (totalBeats / resolution) * resolution;
-        if (endBeat <= quantized.back().startBeat)
-            endBeat = quantized.back().startBeat + resolution;
-        quantized.back().durationBeats = endBeat - quantized.back().startBeat;
-    }
-
-    // Ensure minimum duration
+    // Ensure minimum chord-level duration
     for (auto& chord : quantized)
     {
         if (chord.durationBeats < resolution)

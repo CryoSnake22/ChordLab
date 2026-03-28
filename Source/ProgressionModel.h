@@ -17,6 +17,8 @@ struct ProgressionChord
     double durationBeats = 4.0;       // duration in beats
     std::vector<int> midiNotes;       // original MIDI notes (absolute, for keyboard display)
     std::vector<int> midiVelocities;  // per-note velocities (parallel to midiNotes)
+    std::vector<double> noteStartBeats;  // per-note start beat (parallel to midiNotes)
+    std::vector<double> noteDurations;   // per-note duration (parallel to midiNotes)
 
     juce::String getDisplayName() const
     {
