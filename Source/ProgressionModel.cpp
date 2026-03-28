@@ -1,4 +1,5 @@
 #include "ProgressionModel.h"
+#include "ProgressionRecorder.h"
 #include <algorithm>
 
 //==============================================================================
@@ -297,6 +298,33 @@ Progression ProgressionLibrary::progressionFromValueTree (const juce::ValueTree&
         auto child = tree.getChild (i);
         if (child.hasType (ID_ProgressionChord))
             p.chords.push_back (chordFromValueTree (child));
+    }
+
+    // Auto-upgrade: if rawMidi exists but chords lack real per-note timing,
+    // re-analyze from rawMidi to get proper per-note start/duration data.
+    if (p.rawMidi.getNumEvents() > 0 && ! p.chords.empty())
+    {
+        bool needsReanalysis = false;
+        for (const auto& c : p.chords)
+        {
+            // Detect old-style data: all noteStartBeats are identical (same as chord startBeat)
+            if (c.noteStartBeats.size() > 1)
+            {
+                bool allSame = true;
+                for (size_t ni = 1; ni < c.noteStartBeats.size(); ++ni)
+                    if (std::abs (c.noteStartBeats[ni] - c.noteStartBeats[0]) > 0.001)
+                    { allSame = false; break; }
+                if (allSame && std::abs (c.noteStartBeats[0] - c.startBeat) < 0.001)
+                { needsReanalysis = true; break; }
+            }
+        }
+        if (needsReanalysis)
+        {
+            // Re-analyze preserving chord names from saved data
+            auto freshChords = ProgressionRecorder::analyzeChordChanges (p.rawMidi, nullptr);
+            if (! freshChords.empty())
+                p.chords = freshChords;
+        }
     }
 
     return p;

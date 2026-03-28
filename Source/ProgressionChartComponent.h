@@ -19,6 +19,7 @@ public:
 
     int getSelectedChord() const { return selectedChordIndex; }
     double getLastClickedBeat() const { return lastClickedBeat; }
+    void setLastClickedBeat (double beat) { lastClickedBeat = beat; }
     int getIdealHeight() const;
     void setViewportHeight (int height);
 

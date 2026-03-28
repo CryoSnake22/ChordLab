@@ -299,6 +299,22 @@ MelodyChartComponent::DragEdge MelodyChartComponent::hitTestChordEdge (
         }
     }
 
+    // Check end marker
+    if (mel->totalBeats > 0.0)
+    {
+        int endRow = getRowForBeat (mel->totalBeats);
+        double endRowStart = endRow * beatsPerRow;
+        float endX = leftPad + static_cast<float> (mel->totalBeats - endRowStart) * getBeatWidth();
+        float endY = static_cast<float> (endRow * (rowHeight() + rowGap));
+
+        if (std::abs (pos.x - endX) < edgeHitZone + 2.0f
+            && pos.y >= endY && pos.y <= endY + static_cast<float> (rowHeight()))
+        {
+            outIndex = -1;
+            return DragEdge::EndMarker;
+        }
+    }
+
     outIndex = -1;
     return DragEdge::None;
 }
@@ -328,11 +344,17 @@ void MelodyChartComponent::mouseDown (const juce::MouseEvent& e)
     if (mel == nullptr)
         return;
 
-    // Chord context edge drag (edit mode)
+    // Chord context edge drag or end marker drag (edit mode)
     if (editMode && melody != nullptr)
     {
         int idx = -1;
         auto edge = hitTestChordEdge (e.position, idx);
+        if (edge == DragEdge::EndMarker)
+        {
+            dragEdge = DragEdge::EndMarker;
+            dragChordIndex = -1;
+            return;
+        }
         if (edge != DragEdge::None && idx >= 0)
         {
             dragEdge = edge;
@@ -371,7 +393,21 @@ void MelodyChartComponent::mouseDown (const juce::MouseEvent& e)
 
 void MelodyChartComponent::mouseDrag (const juce::MouseEvent& e)
 {
-    if (dragEdge == DragEdge::None || melody == nullptr || dragChordIndex < 0)
+    if (dragEdge == DragEdge::None || melody == nullptr)
+        return;
+
+    if (dragEdge == DragEdge::EndMarker)
+    {
+        int row = getRowForBeat (melody->totalBeats);
+        double newEnd = snapBeat (xToBeat (e.position.x, row));
+        if (newEnd < quantizeGrid)
+            newEnd = quantizeGrid;
+        melody->totalBeats = newEnd;
+        repaint();
+        return;
+    }
+
+    if (dragChordIndex < 0)
         return;
 
     auto& cc = melody->chordContexts[static_cast<size_t> (dragChordIndex)];
@@ -577,6 +613,24 @@ void MelodyChartComponent::paint (juce::Graphics& g)
                 g.drawText (noteName, rect.reduced (1.0f, 0), juce::Justification::centred, false);
             }
         }
+    }
+
+    // Draw end marker (yellow) in edit mode
+    if (editMode && totalBeats > 0.0)
+    {
+        int endRow = getRowForBeat (totalBeats);
+        double endRowStart = endRow * beatsPerRow;
+        float endX = leftPad + static_cast<float> (totalBeats - endRowStart) * bw;
+        float endY = static_cast<float> (endRow * (rowHeight() + rowGap));
+        int rh = rowHeight();
+
+        g.setColour (juce::Colour (ChordyTheme::accent));
+        g.fillRect (endX - 1.5f, endY, 3.0f, static_cast<float> (rh));
+
+        juce::Path tri;
+        float triY = endY + static_cast<float> (rh);
+        tri.addTriangle (endX - 5.0f, triY, endX + 5.0f, triY, endX, triY - 6.0f);
+        g.fillPath (tri);
     }
 
     // Draw cursor

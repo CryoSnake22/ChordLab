@@ -308,13 +308,7 @@ void ProgressionChartComponent::mouseDrag (const juce::MouseEvent& e)
         int row = getRowForBeat (progression->totalBeats);
         double newEnd = snapBeat (xToBeat (e.position.x, row));
 
-        if (! progression->chords.empty())
-        {
-            auto& last = progression->chords.back();
-            double minEnd = last.startBeat + last.durationBeats;
-            if (newEnd < minEnd)
-                newEnd = minEnd;
-        }
+        // Minimum 1 beat (freely movable, not locked to last chord)
         if (newEnd < quantizeGrid)
             newEnd = quantizeGrid;
 
@@ -756,8 +750,8 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
                                         static_cast<float> (detailedChordLabelHeight), 3.0f);
             }
 
-            // Only draw chord name if there's enough space
-            if (lw > 10.0f)
+            // Only draw chord name if there's enough space to be readable
+            if (lw > 40.0f)
             {
                 g.setColour (juce::Colour (isSelected ? ChordyTheme::textPrimary : ChordyTheme::textSecondary));
                 g.setFont (juce::FontOptions (11.0f));
@@ -767,6 +761,23 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
                             juce::Justification::centred, false);
             }
         }
+    }
+
+    // Draw end marker (yellow) in edit mode
+    if (editMode && totalBeats > 0.0)
+    {
+        int endRow = getRowForBeat (totalBeats);
+        double endRowStart = endRow * beatsPerRow;
+        float endX = leftPad + static_cast<float> (totalBeats - endRowStart) * bw;
+        float endY = static_cast<float> (endRow * (rh + rowGap));
+
+        g.setColour (juce::Colour (ChordyTheme::accent));
+        g.fillRect (endX - 1.5f, endY, 3.0f, static_cast<float> (rh));
+
+        juce::Path tri;
+        float triY = endY + static_cast<float> (rh);
+        tri.addTriangle (endX - 5.0f, triY, endX + 5.0f, triY, endX, triY - 6.0f);
+        g.fillPath (tri);
     }
 
     // Draw cursor

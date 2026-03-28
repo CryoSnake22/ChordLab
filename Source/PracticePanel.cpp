@@ -111,29 +111,32 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
             return;
         }
 
-        const auto& chord = previewProgression.chords[static_cast<size_t> (chordIdx)];
         double clickBeat = practiceChart.getLastClickedBeat();
         int ch = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
 
-        // Filter notes by clicked beat — only play/highlight notes active at that beat
+        // Scan ALL chords for notes active at the clicked beat
         std::vector<int> activeNotesMidi;
         std::vector<float> activeVelocities;
-        for (size_t i = 0; i < chord.midiNotes.size(); ++i)
+        for (const auto& c : previewProgression.chords)
         {
-            double ns = (i < chord.noteStartBeats.size()) ? chord.noteStartBeats[i] : chord.startBeat;
-            double nd = (i < chord.noteDurations.size()) ? chord.noteDurations[i] : chord.durationBeats;
-            if (clickBeat >= ns && clickBeat < ns + nd)
+            for (size_t i = 0; i < c.midiNotes.size(); ++i)
             {
-                activeNotesMidi.push_back (chord.midiNotes[i]);
-                float vel = (i < chord.midiVelocities.size() && chord.midiVelocities[i] > 0)
-                    ? static_cast<float> (chord.midiVelocities[i]) / 127.0f : 0.7f;
-                activeVelocities.push_back (vel);
+                double ns = (i < c.noteStartBeats.size()) ? c.noteStartBeats[i] : c.startBeat;
+                double nd = (i < c.noteDurations.size()) ? c.noteDurations[i] : c.durationBeats;
+                if (clickBeat >= ns && clickBeat < ns + nd)
+                {
+                    activeNotesMidi.push_back (c.midiNotes[i]);
+                    float vel = (i < c.midiVelocities.size() && c.midiVelocities[i] > 0)
+                        ? static_cast<float> (c.midiVelocities[i]) / 127.0f : 0.7f;
+                    activeVelocities.push_back (vel);
+                }
             }
         }
 
-        // If no notes at clicked beat (edge case), fall back to all notes
+        // Fallback: use the clicked chord's notes if nothing found
         if (activeNotesMidi.empty())
         {
+            const auto& chord = previewProgression.chords[static_cast<size_t> (chordIdx)];
             for (size_t i = 0; i < chord.midiNotes.size(); ++i)
             {
                 activeNotesMidi.push_back (chord.midiNotes[i]);
@@ -147,7 +150,8 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
             processorRef.addPreviewMidi (juce::MidiMessage::noteOn (ch, activeNotesMidi[i], activeVelocities[i]));
 
         // Show chord name in top display
-        clickedChordName = chord.getDisplayName();
+        const auto& clickedChord = previewProgression.chords[static_cast<size_t> (chordIdx)];
+        clickedChordName = clickedChord.getDisplayName();
         clickedChordFrames = 60; // ~1 second at 60Hz
 
         // Highlight keyboard
@@ -1608,227 +1612,118 @@ void PracticePanel::updateProgressionPractice (const std::vector<int>& activeNot
         double progressBeat = beatsElapsed - 4.0;
         progressionTimedBeat = progressBeat;
         practiceChart.setCursorBeat (progressBeat);
+        practiceChart.setLastClickedBeat (progressBeat); // drive per-note amber highlights
 
-        // Find which chord should be active at this beat
+        // Find which chord contains the current beat (for label display only)
         int targetChordIdx = -1;
         for (int ci = 0; ci < static_cast<int> (transposedProgression.chords.size()); ++ci)
         {
             const auto& c = transposedProgression.chords[static_cast<size_t> (ci)];
             if (progressBeat >= c.startBeat && progressBeat < c.startBeat + c.durationBeats)
-            {
-                targetChordIdx = ci;
-                break;
-            }
+            { targetChordIdx = ci; break; }
         }
 
-        // Progression ended — score any remaining unscored chords as misses
+        // Progression ended — finalize scoring
         if (progressBeat >= transposedProgression.totalBeats)
         {
-            progressionChordsTotal = static_cast<int> (transposedProgression.chords.size());
-
-            // Score any remaining unscored chords — proportional credit for partial hits
-            for (int ci = 0; ci < progressionChordsTotal; ++ci)
+            // Mark any remaining un-scored notes as Missed, count correct/total
+            int totalNotes = 0;
+            int correctNotes = 0;
+            for (int ci = 0; ci < static_cast<int> (transposedProgression.chords.size()); ++ci)
             {
-                if (progressionTimedScored.count (ci) == 0)
+                const auto& chord = transposedProgression.chords[static_cast<size_t> (ci)];
+                for (int ni = 0; ni < static_cast<int> (chord.midiNotes.size()); ++ni)
                 {
-                    const auto& missedChord = transposedProgression.chords[static_cast<size_t> (ci)];
-                    int hitCount = 0;
-                    for (int ni = 0; ni < static_cast<int> (missedChord.midiNotes.size()); ++ni)
-                    {
-                        if (practiceChart.getNoteState (ci, ni) == ProgressionChartComponent::NoteState::Correct)
-                            hitCount++;
-                        else
-                            practiceChart.setNoteState (ci, ni, ProgressionChartComponent::NoteState::Missed);
-                    }
-                    double proportion = missedChord.midiNotes.empty() ? 0.0
-                        : static_cast<double> (hitCount) / static_cast<double> (missedChord.midiNotes.size());
-                    int q = proportionToQuality (proportion);
-                    progressionQualitySum += q;
-                    if (q >= 3)
-                        progressionChordsCorrect++;
+                    totalNotes++;
+                    auto st = practiceChart.getNoteState (ci, ni);
+                    if (st == ProgressionChartComponent::NoteState::Correct)
+                        correctNotes++;
+                    else
+                        practiceChart.setNoteState (ci, ni, ProgressionChartComponent::NoteState::Missed);
                 }
             }
 
-            // Overall quality = average of per-chord qualities, rounded
-            int quality = 0;
-            if (progressionChordsTotal > 0)
-                quality = juce::jlimit (0, 5,
-                    juce::roundToInt (static_cast<double> (progressionQualitySum) / progressionChordsTotal));
+            double proportion = totalNotes > 0 ? static_cast<double> (correctNotes) / totalNotes : 0.0;
+            int quality = proportionToQuality (proportion);
 
             int keyIdx = (processorRef.progressionLibrary.getProgression (practicingProgressionId)->keyPitchClass
                           + progressionKeyOffset) % 12;
             processorRef.spacedRepetition.recordAttempt (practicingProgressionId, keyIdx, quality);
             updateStats();
 
-            juce::String scoreText = juce::String (progressionChordsCorrect) + "/"
-                                     + juce::String (progressionChordsTotal) + " chords";
-            feedbackLabel.setText ("Complete! " + scoreText, juce::dontSendNotification);
+            feedbackLabel.setText ("Complete! " + juce::String (correctNotes) + "/" + juce::String (totalNotes) + " notes",
+                                   juce::dontSendNotification);
             feedbackLabel.setColour (juce::Label::textColourId,
                 quality >= 3 ? juce::Colour (ChordyTheme::success) : juce::Colour (ChordyTheme::danger));
 
-            // Reset for next key — brief silence to avoid click
             processorRef.tempoEngine.resetBeatPosition();
             processorRef.tempoEngine.markChallengeStart();
+            timedPhase = TimedPhase::CountIn;
             lastBeatInSequence = -1;
-            progressionTimedScored.clear();
 
             int nextKey = getNextCustomChallenge().keyIndex;
             loadProgressionChallenge (nextKey);
             return;
         }
 
-        // Update current chord if it changed — score missed chords
+        // Update chord label display (chords are labels only, not scoring units)
         if (targetChordIdx >= 0 && targetChordIdx != progressionChordIndex)
         {
-            // Any chords between the old and new index that weren't scored — proportional credit
-            for (int ci = progressionChordIndex; ci < targetChordIdx; ++ci)
-            {
-                if (progressionTimedScored.count (ci) == 0)
-                {
-                    progressionTimedScored.insert (ci);
-
-                    // Check which notes were hit via real-time per-note states
-                    const auto& missedChord = transposedProgression.chords[static_cast<size_t> (ci)];
-                    std::set<int> missedTargetPC;
-                    for (int n : missedChord.midiNotes) missedTargetPC.insert (n % 12);
-
-                    // Count how many target PCs were marked Correct in the chart
-                    int hitCount = 0;
-                    for (int ni = 0; ni < static_cast<int> (missedChord.midiNotes.size()); ++ni)
-                    {
-                        auto stIt = practiceChart.getNoteState (ci, ni);
-                        if (stIt == ProgressionChartComponent::NoteState::Correct)
-                            hitCount++;
-                        else
-                            practiceChart.setNoteState (ci, ni, ProgressionChartComponent::NoteState::Missed);
-                    }
-
-                    double proportion = missedTargetPC.empty() ? 0.0
-                        : static_cast<double> (hitCount) / static_cast<double> (missedChord.midiNotes.size());
-                    int quality = proportionToQuality (proportion);
-                    progressionQualitySum += quality;
-                    if (quality >= 3)
-                        progressionChordsCorrect++;
-                }
-            }
-
             progressionChordIndex = targetChordIdx;
-            const auto& chord = transposedProgression.chords[static_cast<size_t> (targetChordIdx)];
-            targetNotes = chord.midiNotes;
             practiceChart.setSelectedChord (targetChordIdx);
-            practiceChart.setAllChordNoteStates (targetChordIdx, ProgressionChartComponent::NoteState::Target);
 
             int keyIdx = (processorRef.progressionLibrary.getProgression (practicingProgressionId)->keyPitchClass
                           + progressionKeyOffset) % 12;
             juce::String keyName = ChordDetector::noteNameFromPitchClass (keyIdx);
+            const auto& chord = transposedProgression.chords[static_cast<size_t> (targetChordIdx)];
             targetLabel.setText ("Key: " + keyName + " - " + chord.getDisplayName(),
                                  juce::dontSendNotification);
-
-            if (progressionTimedScored.count (targetChordIdx) == 0)
-            {
-                feedbackLabel.setText ("GO!", juce::dontSendNotification);
-                feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::successBright));
-                timingFeedbackLabel.setText ("", juce::dontSendNotification);
-            }
-
-            keyboardRef.clearAllColours();
-            for (int note : targetNotes)
-                keyboardRef.setKeyColour (note, KeyColour::Target);
-            keyboardRef.repaint();
         }
 
-        // Check if user is playing the correct chord
-        if (targetChordIdx >= 0 && progressionTimedScored.count (targetChordIdx) == 0
-            && ! activeNotes.empty())
+        // --- Per-note independent scoring: scan ALL notes in ALL chords ---
+        std::set<int> playedPC;
+        for (int n : activeNotes) playedPC.insert (n % 12);
+
+        keyboardRef.clearAllColours();
+
+        for (int ci = 0; ci < static_cast<int> (transposedProgression.chords.size()); ++ci)
         {
-            updateKeyboardColours (activeNotes);
-
-            std::set<int> targetPC, playedPC;
-            for (int n : targetNotes) targetPC.insert (n % 12);
-            for (int n : activeNotes) playedPC.insert (n % 12);
-
-            // Update per-note visual states in real-time
+            const auto& chord = transposedProgression.chords[static_cast<size_t> (ci)];
+            for (int ni = 0; ni < static_cast<int> (chord.midiNotes.size()); ++ni)
             {
-                const auto& chord = transposedProgression.chords[static_cast<size_t> (targetChordIdx)];
-                for (int ni = 0; ni < static_cast<int> (chord.midiNotes.size()); ++ni)
+                auto sni = static_cast<size_t> (ni);
+                double ns = (sni < chord.noteStartBeats.size()) ? chord.noteStartBeats[sni] : chord.startBeat;
+                double nd = (sni < chord.noteDurations.size()) ? chord.noteDurations[sni] : chord.durationBeats;
+                int notePC = chord.midiNotes[sni] % 12;
+                auto currentState = practiceChart.getNoteState (ci, ni);
+
+                if (progressBeat >= ns && progressBeat < ns + nd)
                 {
-                    int notePC = chord.midiNotes[static_cast<size_t> (ni)] % 12;
-                    if (playedPC.count (notePC) > 0)
-                        practiceChart.setNoteState (targetChordIdx, ni,
-                            ProgressionChartComponent::NoteState::Correct);
-                }
-            }
-
-            // Score on exact pitch-class match (user must play all notes)
-            if (playedPC == targetPC && progressionTimedScored.count (targetChordIdx) == 0)
-            {
-                progressionTimedScored.insert (targetChordIdx);
-                practiceChart.setAllChordNoteStates (targetChordIdx, ProgressionChartComponent::NoteState::Correct);
-
-                const auto& chord = transposedProgression.chords[static_cast<size_t> (targetChordIdx)];
-                double beatIntoChord = progressBeat - chord.startBeat;
-                int quality = computeQuality (beatIntoChord, false);
-
-                progressionQualitySum += quality;
-                if (quality >= 3)
-                    progressionChordsCorrect++;
-
-                feedbackLabel.setText ("Correct!", juce::dontSendNotification);
-                feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
-
-                juce::String qualityText;
-                juce::Colour qualityColour;
-                switch (quality)
-                {
-                    case 5:  qualityText = "Perfect!";  qualityColour = juce::Colour (ChordyTheme::qualityPerfect); break;
-                    case 4:  qualityText = "Good";      qualityColour = juce::Colour (ChordyTheme::qualityGood); break;
-                    case 3:  qualityText = "OK";        qualityColour = juce::Colour (ChordyTheme::qualityOk); break;
-                    case 2:  qualityText = "Slow";      qualityColour = juce::Colour (ChordyTheme::qualitySlow); break;
-                    default: qualityText = "Late";      qualityColour = juce::Colour (ChordyTheme::qualityTimeout); break;
-                }
-                timingFeedbackLabel.setText (juce::String (beatIntoChord, 1) + " beats - " + qualityText,
-                                             juce::dontSendNotification);
-                timingFeedbackLabel.setColour (juce::Label::textColourId, qualityColour);
-            }
-        }
-        // Check for early hit on the NEXT chord (anticipation)
-        if (! activeNotes.empty() && targetChordIdx >= 0
-            && progressionTimedScored.count (targetChordIdx) != 0)
-        {
-            int nextCI = targetChordIdx + 1;
-            if (nextCI < static_cast<int> (transposedProgression.chords.size())
-                && progressionTimedScored.count (nextCI) == 0)
-            {
-                const auto& nextChord = transposedProgression.chords[static_cast<size_t> (nextCI)];
-                if (nextChord.startBeat - progressBeat < 0.25)
-                {
-                    std::set<int> nextTargetPC, playedPC2;
-                    for (int n : nextChord.midiNotes) nextTargetPC.insert (n % 12);
-                    for (int n : activeNotes) playedPC2.insert (n % 12);
-
-                    if (playedPC2 == nextTargetPC)
+                    // Note is currently active
+                    if (currentState != ProgressionChartComponent::NoteState::Correct)
                     {
-                        progressionTimedScored.insert (nextCI);
-                        practiceChart.setAllChordNoteStates (nextCI, ProgressionChartComponent::NoteState::Correct);
-                        double beatOffset = std::abs (progressBeat - nextChord.startBeat);
-                        int quality = computeQuality (beatOffset, false);
-                        progressionQualitySum += quality;
-                        if (quality >= 3) progressionChordsCorrect++;
-
-                        feedbackLabel.setText ("Correct!", juce::dontSendNotification);
-                        feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
+                        if (! playedPC.empty() && playedPC.count (notePC) > 0)
+                            practiceChart.setNoteState (ci, ni, ProgressionChartComponent::NoteState::Correct);
+                        else
+                            practiceChart.setNoteState (ci, ni, ProgressionChartComponent::NoteState::Target);
                     }
+                    // Show on keyboard
+                    if (playedPC.count (notePC) > 0)
+                        keyboardRef.setKeyColour (chord.midiNotes[sni], KeyColour::Correct);
+                    else
+                        keyboardRef.setKeyColour (chord.midiNotes[sni], KeyColour::Target);
+                }
+                else if (progressBeat >= ns + nd)
+                {
+                    // Note has ended — mark Missed if not already Correct
+                    if (currentState != ProgressionChartComponent::NoteState::Correct
+                        && currentState != ProgressionChartComponent::NoteState::Missed)
+                        practiceChart.setNoteState (ci, ni, ProgressionChartComponent::NoteState::Missed);
                 }
             }
         }
-        else if (activeNotes.empty() && targetChordIdx >= 0
-                 && progressionTimedScored.count (targetChordIdx) == 0)
-        {
-            keyboardRef.clearAllColours();
-            for (int note : targetNotes)
-                keyboardRef.setKeyColour (note, KeyColour::Target);
-            keyboardRef.repaint();
-        }
+
+        keyboardRef.repaint();
 
         return;
     }
@@ -2144,9 +2039,10 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
             stopMelodyBacking();
             practiceMLChart.setCursorBeat (-1.0);
 
-            // Reset for next key
+            // Reset for next key with 4-beat count-in
             processorRef.tempoEngine.resetBeatPosition();
             processorRef.tempoEngine.markChallengeStart();
+            timedPhase = TimedPhase::CountIn;
             lastBeatInSequence = -1;
             melodyTimedScored.clear();
             melodyTimedQualitySum = 0;
@@ -2215,9 +2111,9 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
                 && melodyTimedScored.count (nextIdx) == 0
                 && (candidates.empty() || nextIdx != candidates[0]))
             {
-                // Only allow anticipation within quarter beat of the next note's start
+                // Allow anticipation within half a beat of the next note's start
                 const auto& nextNote = transposedMelody.notes[static_cast<size_t> (nextIdx)];
-                if (nextNote.startBeat - progressBeat < 0.25)
+                if (nextNote.startBeat - progressBeat < 0.5)
                     candidates.push_back (nextIdx);
             }
 

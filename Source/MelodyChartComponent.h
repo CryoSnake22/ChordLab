@@ -53,8 +53,8 @@ private:
 
     std::map<int, NoteState> noteStates;
 
-    // Drag state for chord context edges
-    enum class DragEdge { None, Left, Right };
+    // Drag state for chord context edges + end marker
+    enum class DragEdge { None, Left, Right, EndMarker };
     DragEdge dragEdge = DragEdge::None;
     int dragChordIndex = -1;
 

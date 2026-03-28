@@ -124,14 +124,19 @@ std::vector<ProgressionChord> ProgressionRecorder::groupNotesIntoChords (
     if (notes.empty())
         return chords;
 
-    // Group notes by temporal overlap: a note joins the current chord
-    // if its startBeat falls before any existing note's endBeat
+    // Group notes into chords by note-on clustering.
+    // A new chord starts when there's a gap in note-on times (> 0.5 beats since
+    // the last note-on in the current group). This prevents long held notes from
+    // merging separate chords together.
     struct ChordGroup
     {
         std::vector<size_t> noteIndices;
         double earliestStart = 1e9;
         double latestEnd = 0.0;
+        double lastNoteOnTime = 0.0;  // most recent note-on in this group
     };
+
+    static constexpr double chordGapThreshold = 0.5; // beats between note-ons to split chords
 
     std::vector<ChordGroup> groups;
     ChordGroup currentGroup;
@@ -141,21 +146,26 @@ std::vector<ProgressionChord> ProgressionRecorder::groupNotesIntoChords (
         const auto& n = notes[i];
         double noteEnd = n.startBeat + n.durationBeats;
 
-        if (currentGroup.noteIndices.empty() || n.startBeat < currentGroup.latestEnd)
+        // A note joins the current chord if its start is close to the last note-on
+        // in this group (within threshold). Long held notes don't extend the window.
+        bool isNewChord = ! currentGroup.noteIndices.empty()
+            && (n.startBeat - currentGroup.lastNoteOnTime) >= chordGapThreshold;
+
+        if (currentGroup.noteIndices.empty() || ! isNewChord)
         {
-            // Note overlaps with current group
             currentGroup.noteIndices.push_back (i);
             currentGroup.earliestStart = std::min (currentGroup.earliestStart, n.startBeat);
             currentGroup.latestEnd = std::max (currentGroup.latestEnd, noteEnd);
+            currentGroup.lastNoteOnTime = std::max (currentGroup.lastNoteOnTime, n.startBeat);
         }
         else
         {
-            // Gap detected — finalize current group, start new one
             groups.push_back (currentGroup);
             currentGroup = {};
             currentGroup.noteIndices.push_back (i);
             currentGroup.earliestStart = n.startBeat;
             currentGroup.latestEnd = noteEnd;
+            currentGroup.lastNoteOnTime = n.startBeat;
         }
     }
     if (! currentGroup.noteIndices.empty())
