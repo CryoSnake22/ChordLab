@@ -69,6 +69,7 @@ private:
 
     // --- Editing mode components ---
     juce::Label editHeader;
+    juce::Viewport editChartViewport;
     ProgressionChartComponent editChart;
     juce::TextButton quantRawBtn { "Raw" };
     juce::TextButton quantBeatBtn { "Beat" };

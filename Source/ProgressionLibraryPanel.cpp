@@ -180,7 +180,9 @@ ProgressionLibraryPanel::ProgressionLibraryPanel (AudioPluginAudioProcessor& pro
 
     editChart.onChordSelected = [this](int idx) { onEditChordSelected (idx); };
     editChart.setEditMode (true);
-    addChildComponent (editChart);
+    editChartViewport.setViewedComponent (&editChart, false);
+    editChartViewport.setScrollBarsShown (true, false);
+    addChildComponent (editChartViewport);
 
     editChordLabel.setText ("Chord:", juce::dontSendNotification);
     labelStyle (editChordLabel);
@@ -413,8 +415,10 @@ void ProgressionLibraryPanel::layoutEditMode (juce::Rectangle<int> area)
     editQualityLabel.setBounds (rootQualRow.removeFromLeft (50));
     editQualityCombo.setBounds (rootQualRow);
 
-    // Chart takes remaining space
-    editChart.setBounds (area);
+    // Chart takes remaining space (viewport scrollable, chart sizes to content)
+    editChartViewport.setBounds (area);
+    editChart.setViewportHeight (area.getHeight());
+    editChart.setSize (area.getWidth(), juce::jmax (area.getHeight(), editChart.getIdealHeight()));
 }
 
 void ProgressionLibraryPanel::layoutConfirmMode (juce::Rectangle<int> area)
@@ -465,7 +469,7 @@ void ProgressionLibraryPanel::setIdleModeVisible (bool v)
 void ProgressionLibraryPanel::setEditModeVisible (bool v)
 {
     editHeader.setVisible (v);
-    editChart.setVisible (v);
+    editChartViewport.setVisible (v);
     quantRawBtn.setVisible (v);
     quantBeatBtn.setVisible (v);
     quantHalfBtn.setVisible (v);

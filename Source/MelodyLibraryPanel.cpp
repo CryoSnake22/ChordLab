@@ -197,7 +197,9 @@ MelodyLibraryPanel::MelodyLibraryPanel (AudioPluginAudioProcessor& processor)
 
     editChart.setEditMode (true);
     editChart.onChordContextSelected = [this](int idx) { onChordContextSelected (idx); };
-    addChildComponent (editChart);
+    editChartViewport.setViewedComponent (&editChart, false);
+    editChartViewport.setScrollBarsShown (true, false);
+    addChildComponent (editChartViewport);
 
     // Chord context editing controls
     addChordBtn.onClick = [this] { onAddChordContext(); };
@@ -380,8 +382,10 @@ void MelodyLibraryPanel::layoutEditMode (juce::Rectangle<int> area)
     ccRow2.removeFromLeft (4);
     ccAlterationsEditor.setBounds (ccRow2);
 
-    // Chart takes remaining space
-    editChart.setBounds (area);
+    // Chart takes remaining space (viewport scrollable, chart sizes to content)
+    editChartViewport.setBounds (area);
+    editChart.setViewportHeight (area.getHeight());
+    editChart.setSize (area.getWidth(), juce::jmax (area.getHeight(), editChart.getIdealHeight()));
 }
 
 void MelodyLibraryPanel::layoutConfirmMode (juce::Rectangle<int> area)
@@ -428,7 +432,7 @@ void MelodyLibraryPanel::setIdleModeVisible (bool v)
 void MelodyLibraryPanel::setEditModeVisible (bool v)
 {
     editHeader.setVisible (v);
-    editChart.setVisible (v);
+    editChartViewport.setVisible (v);
     quantRawBtn.setVisible (v);
     quantBeatBtn.setVisible (v);
     quantHalfBtn.setVisible (v);

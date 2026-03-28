@@ -274,7 +274,7 @@ MelodyChartComponent::DragEdge MelodyChartComponent::hitTestChordEdge (
     // Check end marker FIRST (priority over chord context edges)
     if (mel->totalBeats > 0.0)
     {
-        int endRow = getRowForBeat (mel->totalBeats);
+        int endRow = getRowForBeat (juce::jmax (0.01, mel->totalBeats - 0.01));
         double endRowStart = endRow * beatsPerRow;
         float endX = leftPad + static_cast<float> (mel->totalBeats - endRowStart) * getBeatWidth();
         float endY = static_cast<float> (endRow * (rowHeight() + rowGap));
@@ -398,12 +398,19 @@ void MelodyChartComponent::mouseDrag (const juce::MouseEvent& e)
 
     if (dragEdge == DragEdge::EndMarker)
     {
-        int row = getRowForBeat (melody->totalBeats);
-        // End marker always snaps to whole beats regardless of quantize setting
+        // Use mouse Y to determine the row (not old totalBeats)
+        int rh = rowHeight();
+        int row = juce::jmax (0, static_cast<int> (e.position.y) / (rh + rowGap));
         double newEnd = std::round (xToBeat (e.position.x, row));
         if (newEnd < 1.0)
             newEnd = 1.0;
         melody->totalBeats = newEnd;
+
+        // Grow/shrink to fit content
+        int idealH = getIdealHeight();
+        if (idealH != getHeight())
+            setSize (getWidth(), idealH);
+
         repaint();
         return;
     }
@@ -619,7 +626,7 @@ void MelodyChartComponent::paint (juce::Graphics& g)
     // Draw end marker (yellow) in edit mode
     if (editMode && totalBeats > 0.0)
     {
-        int endRow = getRowForBeat (totalBeats);
+        int endRow = getRowForBeat (juce::jmax (0.01, totalBeats - 0.01));
         double endRowStart = endRow * beatsPerRow;
         float endX = leftPad + static_cast<float> (totalBeats - endRowStart) * bw;
         float endY = static_cast<float> (endRow * (rowHeight() + rowGap));

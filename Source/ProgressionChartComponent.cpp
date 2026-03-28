@@ -199,7 +199,7 @@ ProgressionChartComponent::DragEdge ProgressionChartComponent::hitTestEdge (
         double totalBeats = prog->totalBeats;
         if (totalBeats > 0.0)
         {
-            int endRow = getRowForBeat (totalBeats);
+            int endRow = getRowForBeat (juce::jmax (0.01, totalBeats - 0.01));
             double rowStartBeat = endRow * beatsPerRow;
             float endX = leftPad + static_cast<float> (totalBeats - rowStartBeat) * getBeatWidth();
             float endY = static_cast<float> (endRow * (rh + rowGap));
@@ -307,14 +307,21 @@ void ProgressionChartComponent::mouseDrag (const juce::MouseEvent& e)
 
     if (dragEdge == DragEdge::EndMarker)
     {
-        int row = getRowForBeat (progression->totalBeats);
-        // End marker always snaps to whole beats regardless of quantize setting
+        // Use mouse Y to determine the row (not old totalBeats)
+        int rh = getEffectiveRowHeight();
+        int row = juce::jmax (0, static_cast<int> (e.position.y) / (rh + rowGap));
         double newEnd = std::round (xToBeat (e.position.x, row));
 
         if (newEnd < 1.0)
             newEnd = 1.0;
 
         progression->totalBeats = newEnd;
+
+        // Grow/shrink to fit content
+        int idealH = getIdealHeight();
+        if (idealH != getHeight())
+            setSize (getWidth(), idealH);
+
         repaint();
         return;
     }
@@ -390,15 +397,19 @@ void ProgressionChartComponent::mouseUp (const juce::MouseEvent&)
 {
     if (dragEdge != DragEdge::None)
     {
+        bool wasEndMarker = (dragEdge == DragEdge::EndMarker);
         dragEdge = DragEdge::None;
         dragChordIndex = -1;
 
-        if (progression != nullptr)
+        // Only recompute totalBeats from chords when dragging chord edges,
+        // NOT when dragging the end marker (user sets totalBeats explicitly)
+        if (progression != nullptr && ! wasEndMarker)
         {
             double maxEnd = 0.0;
             for (const auto& c : progression->chords)
                 maxEnd = juce::jmax (maxEnd, c.startBeat + c.durationBeats);
-            progression->totalBeats = maxEnd;
+            if (maxEnd > progression->totalBeats)
+                progression->totalBeats = maxEnd;
         }
 
         if (onChordResized)
@@ -577,7 +588,7 @@ void ProgressionChartComponent::paintSimple (juce::Graphics& g, const Progressio
     // Draw end marker (edit mode only)
     if (editMode && totalBeats > 0.0)
     {
-        int endRow = getRowForBeat (totalBeats);
+        int endRow = getRowForBeat (juce::jmax (0.01, totalBeats - 0.01));
         double endRowStart = endRow * beatsPerRow;
         float endX = leftPad + static_cast<float> (totalBeats - endRowStart) * bw;
         float endY = static_cast<float> (endRow * (rh + rowGap));
@@ -768,7 +779,7 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
     // Draw end marker (yellow) in edit mode
     if (editMode && totalBeats > 0.0)
     {
-        int endRow = getRowForBeat (totalBeats);
+        int endRow = getRowForBeat (juce::jmax (0.01, totalBeats - 0.01));
         double endRowStart = endRow * beatsPerRow;
         float endX = leftPad + static_cast<float> (totalBeats - endRowStart) * bw;
         float endY = static_cast<float> (endRow * (rh + rowGap));
