@@ -57,6 +57,7 @@ private:
     juce::ListBox voicingList;
     juce::TextButton recordButton { "Record" };
     juce::TextButton playButton { "Play" };
+    juce::TextButton editButton { "Edit" };
     juce::TextButton deleteButton { "Delete" };
     VoicingStatsChart statsChart;
 
@@ -70,6 +71,7 @@ private:
     juce::ComboBox confirmQualityCombo;
     juce::Label confirmAltLabel;
     juce::TextEditor confirmAltEditor;
+    juce::TextButton confirmPlayButton { "Play" };
     juce::TextButton confirmSaveButton { "Save" };
     juce::TextButton confirmCancelButton { "Cancel" };
 

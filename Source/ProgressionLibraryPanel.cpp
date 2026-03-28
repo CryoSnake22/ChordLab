@@ -902,10 +902,21 @@ void ProgressionLibraryPanel::onConfirmSave()
     pendingProgression.quantizeResolution = currentQuantizeResolution;
 
     // Remove old version if editing an existing progression (same ID)
+    auto savedId = pendingProgression.id;
     processorRef.progressionLibrary.removeProgression (pendingProgression.id);
     processorRef.progressionLibrary.addProgression (pendingProgression);
     processorRef.saveLibrariesToDisk();
     enterIdle();
+
+    // Select and scroll to the saved progression
+    for (int i = 0; i < static_cast<int> (displayedProgressions.size()); ++i)
+    {
+        if (displayedProgressions[static_cast<size_t> (i)].id == savedId)
+        {
+            progressionList.selectRow (i);
+            break;
+        }
+    }
 }
 
 void ProgressionLibraryPanel::onDelete()

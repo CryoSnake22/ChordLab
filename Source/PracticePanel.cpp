@@ -712,6 +712,7 @@ void PracticePanel::stopPractice()
 void PracticePanel::showProgressionPreview (const Progression* prog)
 {
     showingMelPreview = false;
+    voicingButton.setVisible (false);
     if (prog == nullptr)
     {
         showingProgPreview = false;

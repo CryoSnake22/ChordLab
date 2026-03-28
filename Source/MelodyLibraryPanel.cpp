@@ -875,9 +875,20 @@ void MelodyLibraryPanel::onConfirmSave()
 
     // Remove old version if editing an existing melody (same ID)
     processorRef.melodyLibrary.removeMelody (pendingMelody.id);
+    auto savedId = pendingMelody.id;
     processorRef.melodyLibrary.addMelody (pendingMelody);
     processorRef.saveLibrariesToDisk();
     enterIdle();
+
+    // Select and scroll to the saved melody
+    for (int i = 0; i < static_cast<int> (displayedMelodies.size()); ++i)
+    {
+        if (displayedMelodies[static_cast<size_t> (i)].id == savedId)
+        {
+            melodyList.selectRow (i);
+            break;
+        }
+    }
 }
 
 void MelodyLibraryPanel::onDelete()

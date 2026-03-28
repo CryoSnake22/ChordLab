@@ -723,6 +723,20 @@ bool AudioPluginAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 
     // Library mode: space = play/stop based on active tab
     int tab = libraryTabs.getCurrentTabIndex();
+    if (tab == 0) // Voicings — play selected voicing
+    {
+      auto id = voicingLibraryPanel.getSelectedVoicingId();
+      if (id.isNotEmpty())
+      {
+        const auto* v = processorRef.voicingLibrary.getVoicing (id);
+        if (v != nullptr)
+        {
+          auto notes = VoicingLibrary::transposeToKey (*v, v->octaveReference);
+          startVoicingPreview (notes, v->velocities);
+        }
+      }
+      return true;
+    }
     if (tab == 1) // Progressions
     {
       progressionLibraryPanel.togglePlay();

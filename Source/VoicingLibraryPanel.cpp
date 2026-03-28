@@ -140,6 +140,15 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     };
     addAndMakeVisible (playButton);
 
+    editButton.onClick = [this] {
+        auto id = getSelectedVoicingId();
+        if (id.isEmpty()) return;
+        const auto* v = processorRef.voicingLibrary.getVoicing (id);
+        if (v == nullptr) return;
+        enterConfirmingWithVoicing (*v);
+    };
+    addAndMakeVisible (editButton);
+
     deleteButton.onClick = [this] { onDelete(); };
     deleteButton.setColour (juce::TextButton::buttonColourId, juce::Colour (ChordyTheme::dangerMuted));
     addAndMakeVisible (deleteButton);
@@ -184,6 +193,13 @@ VoicingLibraryPanel::VoicingLibraryPanel (AudioPluginAudioProcessor& processor)
     confirmAltEditor.setTextToShowWhenEmpty ("#9#11b5 etc. (optional)", juce::Colour (ChordyTheme::textTertiary));
     addChildComponent (confirmAltEditor);
 
+    confirmPlayButton.onClick = [this] {
+        auto notes = VoicingLibrary::transposeToKey (pendingVoicing, pendingVoicing.octaveReference);
+        if (onKeyPreview)
+            onKeyPreview (notes, pendingVoicing.velocities);
+    };
+    addChildComponent (confirmPlayButton);
+
     confirmSaveButton.onClick = [this] { onConfirmSave(); };
     addChildComponent (confirmSaveButton);
 
@@ -218,6 +234,7 @@ void VoicingLibraryPanel::setNormalModeVisible (bool visible)
     voicingList.setVisible (visible);
     recordButton.setVisible (visible);
     playButton.setVisible (visible);
+    editButton.setVisible (visible);
     deleteButton.setVisible (visible);
 }
 
@@ -232,6 +249,7 @@ void VoicingLibraryPanel::setConfirmModeVisible (bool visible)
     confirmQualityCombo.setVisible (visible);
     confirmAltLabel.setVisible (visible);
     confirmAltEditor.setVisible (visible);
+    confirmPlayButton.setVisible (visible);
     confirmSaveButton.setVisible (visible);
     confirmCancelButton.setVisible (visible);
 }
@@ -263,6 +281,8 @@ void VoicingLibraryPanel::layoutNormalMode (juce::Rectangle<int> area)
 
     auto bottomRow = area.removeFromBottom (30);
     deleteButton.setBounds (bottomRow.removeFromRight (60));
+    bottomRow.removeFromRight (4);
+    editButton.setBounds (bottomRow.removeFromRight (45));
     bottomRow.removeFromRight (4);
     recordButton.setBounds (bottomRow.removeFromRight (70));
     bottomRow.removeFromRight (4);
@@ -306,7 +326,9 @@ void VoicingLibraryPanel::layoutConfirmMode (juce::Rectangle<int> area)
 
     area.removeFromTop (8);
     auto buttonRow = area.removeFromTop (30);
-    int bw = (buttonRow.getWidth() - 8) / 2;
+    int bw = (buttonRow.getWidth() - 16) / 3;
+    confirmPlayButton.setBounds (buttonRow.removeFromLeft (bw));
+    buttonRow.removeFromLeft (8);
     confirmSaveButton.setBounds (buttonRow.removeFromLeft (bw));
     buttonRow.removeFromLeft (8);
     confirmCancelButton.setBounds (buttonRow);
@@ -380,6 +402,7 @@ void VoicingLibraryPanel::setButtonsEnabled (bool enabled)
 {
     recordButton.setEnabled (enabled);
     playButton.setEnabled (enabled);
+    editButton.setEnabled (enabled);
     deleteButton.setEnabled (enabled);
 }
 
@@ -543,6 +566,7 @@ void VoicingLibraryPanel::onConfirmSave()
     pendingVoicing.quality = qualityFromComboId (confirmQualityCombo.getSelectedId());
     pendingVoicing.alterations = confirmAltEditor.getText().trim();
 
+    auto savedId = pendingVoicing.id;
     processorRef.voicingLibrary.addVoicing (pendingVoicing);
     processorRef.saveLibrariesToDisk();
     pendingVoicing = {};
@@ -557,6 +581,9 @@ void VoicingLibraryPanel::onConfirmSave()
     resized();
     repaint();
     updateDisplayedVoicings();
+
+    // Select and scroll to the newly saved voicing
+    selectVoicingById (savedId);
 }
 
 void VoicingLibraryPanel::cancelRecording()
