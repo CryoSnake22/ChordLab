@@ -2167,8 +2167,7 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
             updateMelodyBacking();
         }
 
-        // Check for new note-ons and score
-        if (targetNoteIdx >= 0 && melodyTimedScored.count (targetNoteIdx) == 0)
+        // Check for new note-ons and score — also check the NEXT note for early hits
         {
             std::set<int> currentPCs;
             for (int n : activeNotes)
@@ -2181,60 +2180,86 @@ void PracticePanel::updateMelodyPractice (const std::vector<int>& activeNotes)
 
             previousFramePitchClasses = currentPCs;
 
-            const auto& note = transposedMelody.notes[static_cast<size_t> (targetNoteIdx)];
-            int targetPC = ((melodyKeyRootMidi + note.intervalFromKeyRoot) % 12 + 12) % 12;
-
-            for (int pc : newNoteOns)
+            // Build list of candidate notes to check: current target + next unscored note (for anticipation)
+            std::vector<int> candidates;
+            if (targetNoteIdx >= 0 && melodyTimedScored.count (targetNoteIdx) == 0)
+                candidates.push_back (targetNoteIdx);
+            // Also check the next note (early play / anticipation)
+            int nextIdx = (targetNoteIdx >= 0) ? targetNoteIdx + 1 : melodyNoteIndex;
+            if (nextIdx < static_cast<int> (transposedMelody.notes.size())
+                && melodyTimedScored.count (nextIdx) == 0
+                && (candidates.empty() || nextIdx != candidates[0]))
             {
-                if (pc == targetPC)
+                // Only allow anticipation within 1 beat of the next note's start
+                const auto& nextNote = transposedMelody.notes[static_cast<size_t> (nextIdx)];
+                if (nextNote.startBeat - progressBeat < 1.0)
+                    candidates.push_back (nextIdx);
+            }
+
+            for (int candIdx : candidates)
+            {
+                const auto& note = transposedMelody.notes[static_cast<size_t> (candIdx)];
+                int candPC = ((melodyKeyRootMidi + note.intervalFromKeyRoot) % 12 + 12) % 12;
+
+                for (int pc : newNoteOns)
                 {
-                    melodyTimedScored.insert (targetNoteIdx);
-                    practiceMLChart.setNoteState (targetNoteIdx, MelodyChartComponent::NoteState::Correct);
-
-                    double beatIntoNote = progressBeat - note.startBeat;
-                    int quality = computeQuality (beatIntoNote, false);
-                    melodyTimedQualitySum += quality;
-                    melodyNotesCorrect++;
-
-                    feedbackLabel.setText ("Correct!", juce::dontSendNotification);
-                    feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
-
-                    juce::String qualityText;
-                    juce::Colour qualityColour;
-                    switch (quality)
+                    if (pc == candPC)
                     {
-                        case 5:  qualityText = "Perfect!";  qualityColour = juce::Colour (ChordyTheme::qualityPerfect); break;
-                        case 4:  qualityText = "Good";      qualityColour = juce::Colour (ChordyTheme::qualityGood); break;
-                        case 3:  qualityText = "OK";        qualityColour = juce::Colour (ChordyTheme::qualityOk); break;
-                        case 2:  qualityText = "Slow";      qualityColour = juce::Colour (ChordyTheme::qualitySlow); break;
-                        default: qualityText = "Late";      qualityColour = juce::Colour (ChordyTheme::qualityTimeout); break;
+                        melodyTimedScored.insert (candIdx);
+                        practiceMLChart.setNoteState (candIdx, MelodyChartComponent::NoteState::Correct);
+
+                        // Use absolute offset from note start (negative = early, positive = late)
+                        double beatOffset = std::abs (progressBeat - note.startBeat);
+                        // Wider windows: scale by note duration (short notes get more forgiveness)
+                        double forgiveness = juce::jmax (0.5, note.durationBeats);
+                        int quality;
+                        if (beatOffset < 0.25 * forgiveness) quality = 5;      // Perfect
+                        else if (beatOffset < 0.5 * forgiveness) quality = 4;  // Good
+                        else if (beatOffset < 0.75 * forgiveness) quality = 3; // OK
+                        else quality = 2;                                       // Slow
+
+                        melodyTimedQualitySum += quality;
+                        melodyNotesCorrect++;
+
+                        feedbackLabel.setText ("Correct!", juce::dontSendNotification);
+                        feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
+
+                        juce::String qualityText;
+                        juce::Colour qualityColour;
+                        switch (quality)
+                        {
+                            case 5:  qualityText = "Perfect!";  qualityColour = juce::Colour (ChordyTheme::qualityPerfect); break;
+                            case 4:  qualityText = "Good";      qualityColour = juce::Colour (ChordyTheme::qualityGood); break;
+                            case 3:  qualityText = "OK";        qualityColour = juce::Colour (ChordyTheme::qualityOk); break;
+                            case 2:  qualityText = "Slow";      qualityColour = juce::Colour (ChordyTheme::qualitySlow); break;
+                            default: qualityText = "Late";      qualityColour = juce::Colour (ChordyTheme::qualityTimeout); break;
+                        }
+                        timingFeedbackLabel.setText (juce::String (beatOffset, 1) + " beats - " + qualityText,
+                                                     juce::dontSendNotification);
+                        timingFeedbackLabel.setColour (juce::Label::textColourId, qualityColour);
+                        updateStats();
+                        break;
                     }
-                    timingFeedbackLabel.setText (juce::String (beatIntoNote, 1) + " beats - " + qualityText,
-                                                 juce::dontSendNotification);
-                    timingFeedbackLabel.setColour (juce::Label::textColourId, qualityColour);
-                    updateStats();
-                    break;
                 }
             }
 
             // Continuous keyboard refresh
             keyboardRef.clearAllColours();
-            int targetMidi = melodyKeyRootMidi + note.intervalFromKeyRoot;
-            if (targetMidi >= 0 && targetMidi < 128)
-                keyboardRef.setKeyColour (targetMidi, KeyColour::Target);
-            for (int n : activeNotes)
+            if (targetNoteIdx >= 0 && targetNoteIdx < static_cast<int> (transposedMelody.notes.size()))
             {
-                int pc = ((n % 12) + 12) % 12;
-                if (pc == targetPC)
-                    keyboardRef.setKeyColour (n, KeyColour::Correct);
+                const auto& curNote = transposedMelody.notes[static_cast<size_t> (targetNoteIdx)];
+                int targetMidi = melodyKeyRootMidi + curNote.intervalFromKeyRoot;
+                int curTargetPC = ((melodyKeyRootMidi + curNote.intervalFromKeyRoot) % 12 + 12) % 12;
+                if (targetMidi >= 0 && targetMidi < 128)
+                    keyboardRef.setKeyColour (targetMidi, KeyColour::Target);
+                for (int n : activeNotes)
+                {
+                    int pc = ((n % 12) + 12) % 12;
+                    if (pc == curTargetPC)
+                        keyboardRef.setKeyColour (n, KeyColour::Correct);
+                }
             }
             keyboardRef.repaint();
-        }
-        else
-        {
-            previousFramePitchClasses.clear();
-            for (int n : activeNotes)
-                previousFramePitchClasses.insert (((n % 12) + 12) % 12);
         }
 
         return;

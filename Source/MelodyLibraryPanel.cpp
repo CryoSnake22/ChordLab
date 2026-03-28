@@ -526,11 +526,13 @@ void MelodyLibraryPanel::enterRecording()
     int ch = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
     processorRef.progressionRecorder.startRecording (bpm, processorRef.getSampleRate());
 
-    // Inject any currently held notes at beat 0
+    // Inject any currently held notes at beat 0 with their actual velocities
     auto heldNotes = processorRef.getActiveNotes();
     for (int note : heldNotes)
     {
-        auto msg = juce::MidiMessage::noteOn (ch, note, (juce::uint8) 100);
+        int vel = processorRef.getNoteVelocity (note);
+        if (vel <= 0) vel = 80;
+        auto msg = juce::MidiMessage::noteOn (ch, note, static_cast<juce::uint8> (vel));
         msg.setTimeStamp (0.0);
         processorRef.progressionRecorder.injectEvent (msg);
     }
