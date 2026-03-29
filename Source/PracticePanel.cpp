@@ -86,8 +86,24 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
 
     orderCombo.addItem ("Random", 1);
     orderCombo.addItem ("Chromatic", 2);
+    orderCombo.addItem ("Follow", 3);
+    orderCombo.addItem ("Scale", 4);
     orderCombo.setSelectedId (2, juce::dontSendNotification);
+    orderCombo.onChange = [this] { updateFollowScaleVisibility(); resized(); repaint(); };
     addChildComponent (orderCombo);
+
+    followSourceCombo.addItem ("Scale", 1);
+    followSourceCombo.addItem ("Melody", 2);
+    followSourceCombo.setSelectedId (1, juce::dontSendNotification);
+    followSourceCombo.onChange = [this] { updateFollowScaleVisibility(); resized(); repaint(); };
+    addChildComponent (followSourceCombo);
+
+    for (int i = 0; i < static_cast<int> (ScaleType::NumScaleTypes); ++i)
+        scalePickerCombo.addItem (ScaleModel::getScaleName (static_cast<ScaleType> (i)), i + 1);
+    scalePickerCombo.setSelectedId (1, juce::dontSendNotification);
+    addChildComponent (scalePickerCombo);
+
+    addChildComponent (melodyPickerCombo);
 
     timingFeedbackLabel.setFont (juce::FontOptions (13.0f, juce::Font::bold));
     timingFeedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::textTertiary));
@@ -291,23 +307,67 @@ void PracticePanel::resized()
     // Key selector (conditionally visible)
     if (showingKeySelector)
     {
+        int orderId = orderCombo.getSelectedId();
+        bool isFollow = (orderId == 3);
+        bool isScale = (orderId == 4);
+
         auto controlRow = area.removeFromBottom (24);
-        selectAllButton.setBounds (controlRow.removeFromLeft (40));
-        controlRow.removeFromLeft (4);
-        deselectAllButton.setBounds (controlRow.removeFromLeft (45));
-        controlRow.removeFromLeft (8);
-        orderCombo.setBounds (controlRow);
-        area.removeFromBottom (2);
 
-        auto keyRow2 = area.removeFromBottom (22);
-        int kw = keyRow2.getWidth() / 6;
-        for (int i = 6; i < 12; ++i)
-            keyToggles[i].setBounds (keyRow2.removeFromLeft (kw));
-        area.removeFromBottom (2);
+        if (! isFollow && ! isScale)
+        {
+            // Chromatic/Random: show All/None + orderCombo
+            selectAllButton.setBounds (controlRow.removeFromLeft (40));
+            controlRow.removeFromLeft (4);
+            deselectAllButton.setBounds (controlRow.removeFromLeft (45));
+            controlRow.removeFromLeft (8);
+            orderCombo.setBounds (controlRow);
+            area.removeFromBottom (2);
 
-        auto keyRow1 = area.removeFromBottom (22);
-        for (int i = 0; i < 6; ++i)
-            keyToggles[i].setBounds (keyRow1.removeFromLeft (kw));
+            auto keyRow2 = area.removeFromBottom (22);
+            int kw = keyRow2.getWidth() / 6;
+            for (int i = 6; i < 12; ++i)
+                keyToggles[i].setBounds (keyRow2.removeFromLeft (kw));
+            area.removeFromBottom (2);
+
+            auto keyRow1 = area.removeFromBottom (22);
+            for (int i = 0; i < 6; ++i)
+                keyToggles[i].setBounds (keyRow1.removeFromLeft (kw));
+        }
+        else
+        {
+            // Follow/Scale: orderCombo on the control row
+            orderCombo.setBounds (controlRow);
+            area.removeFromBottom (2);
+
+            if (isFollow)
+            {
+                // Row 2: follow source combo + scale or melody picker
+                auto row2 = area.removeFromBottom (22);
+                followSourceCombo.setBounds (row2.removeFromLeft (80));
+                row2.removeFromLeft (4);
+
+                if (followSourceCombo.getSelectedId() == 2)
+                    melodyPickerCombo.setBounds (row2);
+                else
+                    scalePickerCombo.setBounds (row2);
+
+                area.removeFromBottom (2);
+
+                // Row 1: empty spacer (keep same height as key toggle rows)
+                area.removeFromBottom (22);
+            }
+            else
+            {
+                // Scale mode: scale picker
+                auto row2 = area.removeFromBottom (22);
+                scalePickerCombo.setBounds (row2);
+                area.removeFromBottom (2);
+
+                // Row 1: empty spacer
+                area.removeFromBottom (22);
+            }
+        }
+
         area.removeFromBottom (4);
     }
 
@@ -412,6 +472,14 @@ void PracticePanel::setSelectedVoicingId (const juce::String& id)
             targetLabel.setText ("Select a voicing and press Start", juce::dontSendNotification);
         }
     }
+
+    // Refresh scale picker availability when voicing changes
+    if (orderCombo.getSelectedId() == 4)
+        updateScalePickerAvailability();
+
+    // Enable Follow/Scale options for voicing practice
+    orderCombo.setItemEnabled (3, true);
+    orderCombo.setItemEnabled (4, true);
 }
 
 void PracticePanel::setSelectedProgressionId (const juce::String& id)
@@ -434,6 +502,12 @@ void PracticePanel::setSelectedProgressionId (const juce::String& id)
             targetLabel.setText ("Select a progression and press Start", juce::dontSendNotification);
         }
     }
+
+    // Disable Follow/Scale for non-voicing practice; fall back if selected
+    orderCombo.setItemEnabled (3, false);
+    orderCombo.setItemEnabled (4, false);
+    if (orderCombo.getSelectedId() > 2)
+        orderCombo.setSelectedId (2, juce::dontSendNotification);
 }
 
 void PracticePanel::setSelectedMelodyId (const juce::String& id)
@@ -457,6 +531,12 @@ void PracticePanel::setSelectedMelodyId (const juce::String& id)
             targetLabel.setText ("Select a melody and press Start", juce::dontSendNotification);
         }
     }
+
+    // Disable Follow/Scale for non-voicing practice; fall back if selected
+    orderCombo.setItemEnabled (3, false);
+    orderCombo.setItemEnabled (4, false);
+    if (orderCombo.getSelectedId() > 2)
+        orderCombo.setSelectedId (2, juce::dontSendNotification);
 }
 
 // --- Start / Stop ---
@@ -594,10 +674,7 @@ void PracticePanel::startPractice (const juce::String& voicingId)
     nextButton.setEnabled (true);
     playButton.setEnabled (true);
 
-    // Get first challenge — always use chromatic sequence by default
-    buildCustomKeySequence();
-    currentChallenge = getNextCustomChallenge();
-
+    // Capture voicing's octave reference before building key sequence
     const auto* voicing = processorRef.voicingLibrary.getVoicing (voicingId);
     if (voicing == nullptr)
     {
@@ -605,10 +682,16 @@ void PracticePanel::startPractice (const juce::String& voicingId)
         return;
     }
 
+    practiceOctaveRef = voicing->octaveReference;
+
+    // Build key sequence and get first challenge
+    buildCustomKeySequence();
+    currentChallenge = getNextCustomChallenge();
+
     // Show which voicing we're practicing
     headerLabel.setText ("Practicing: " + voicing->name, juce::dontSendNotification);
 
-    targetNotes = VoicingLibrary::transposeToKey (*voicing, currentChallenge.rootMidiNote);
+    targetNotes = computeTargetNotes (*voicing, currentChallenge);
 
     bool timedMode = timedToggle.getToggleState();
 
@@ -1089,7 +1172,7 @@ void PracticePanel::enterPrepPhase()
 
     // Load next challenge's target notes (for the upcoming play phase)
     currentChallenge = nextChallenge;
-    targetNotes = VoicingLibrary::transposeToKey (*voicing, currentChallenge.rootMidiNote);
+    targetNotes = computeTargetNotes (*voicing, currentChallenge);
 
     // Show upcoming root dimmed as the main display (prep = getting ready)
     juce::String keyName = ChordDetector::noteNameFromPitchClass (currentChallenge.keyIndex);
@@ -1126,7 +1209,7 @@ void PracticePanel::loadNextChallenge()
         return;
     }
 
-    targetNotes = VoicingLibrary::transposeToKey (*voicing, currentChallenge.rootMidiNote);
+    targetNotes = computeTargetNotes (*voicing, currentChallenge);
 
     bool timedMode = timedToggle.getToggleState();
 
@@ -1341,11 +1424,10 @@ void PracticePanel::onCustomToggle()
 
     showingKeySelector = ! showingKeySelector;
 
-    for (int i = 0; i < 12; ++i)
-        keyToggles[i].setVisible (showingKeySelector);
-    selectAllButton.setVisible (showingKeySelector);
-    deselectAllButton.setVisible (showingKeySelector);
     orderCombo.setVisible (showingKeySelector);
+
+    // Show/hide sub-components based on order mode
+    updateFollowScaleVisibility();
 
     customMode = showingKeySelector;
     customButton.setColour (juce::TextButton::buttonColourId,
@@ -1356,8 +1438,120 @@ void PracticePanel::onCustomToggle()
     repaint();
 }
 
+void PracticePanel::updateFollowScaleVisibility()
+{
+    int orderId = orderCombo.getSelectedId();
+    bool isFollow = (orderId == 3);
+    bool isScale = (orderId == 4);
+    bool showScalePicker = showingKeySelector && (isFollow || isScale);
+    bool showKeyToggles = showingKeySelector && ! isFollow && ! isScale;
+
+    for (int i = 0; i < 12; ++i)
+        keyToggles[i].setVisible (showKeyToggles);
+    selectAllButton.setVisible (showKeyToggles);
+    deselectAllButton.setVisible (showKeyToggles);
+
+    followSourceCombo.setVisible (showingKeySelector && isFollow);
+    scalePickerCombo.setVisible (showScalePicker);
+    melodyPickerCombo.setVisible (showingKeySelector && isFollow
+                                  && followSourceCombo.getSelectedId() == 2);
+
+    // Disable Follow/Scale for non-voicing practice
+    orderCombo.setItemEnabled (3, practiceType == PracticeType::Voicing);
+    orderCombo.setItemEnabled (4, practiceType == PracticeType::Voicing);
+
+    // Scale mode: grey out incompatible scales. Follow mode: all scales allowed.
+    if (isScale)
+        updateScalePickerAvailability();
+    else if (isFollow)
+    {
+        // Re-enable all scales for Follow mode (pure transposition, no restrictions)
+        for (int i = 0; i < static_cast<int> (ScaleType::NumScaleTypes); ++i)
+            scalePickerCombo.setItemEnabled (i + 1, true);
+    }
+
+    // Populate melody picker when switching to melody source
+    if (isFollow && followSourceCombo.getSelectedId() == 2)
+        populateMelodyPicker();
+}
+
 void PracticePanel::buildCustomKeySequence()
 {
+    int orderId = orderCombo.getSelectedId();
+
+    // --- Follow mode ---
+    if (orderId == 3)
+    {
+        selectedScaleType = static_cast<ScaleType> (scalePickerCombo.getSelectedId() - 1);
+        const auto* voicing = processorRef.voicingLibrary.getVoicing (
+            practicingVoicingId.isNotEmpty() ? practicingVoicingId : selectedVoicingId);
+        scaleRootPitchClass = voicing ? voicing->rootPitchClass : 0;
+
+        followSource = (followSourceCombo.getSelectedId() == 2)
+            ? FollowSource::Melody : FollowSource::Scale;
+
+        customKeySequence.clear();
+        scaleDegreeSequence.clear();
+
+        if (followSource == FollowSource::Melody)
+        {
+            followMelodyId = {};
+            int melIdx = melodyPickerCombo.getSelectedId() - 1;
+            const auto& melodies = processorRef.melodyLibrary.getAllMelodies();
+            if (melIdx >= 0 && melIdx < static_cast<int> (melodies.size()))
+            {
+                followMelodyId = melodies[static_cast<size_t> (melIdx)].id;
+                const auto* mel = processorRef.melodyLibrary.getMelody (followMelodyId);
+                if (mel != nullptr)
+                    customKeySequence = ScaleModel::buildMelodyFollowSequence (*mel, practiceOctaveRef);
+            }
+        }
+        else
+        {
+            customKeySequence = ScaleModel::buildScaleRootSequence (selectedScaleType, scaleRootPitchClass, practiceOctaveRef);
+        }
+
+        if (customKeySequence.empty())
+        {
+            // Fallback to chromatic
+            for (int i = 0; i < 12; ++i)
+                customKeySequence.push_back (i);
+        }
+
+        rootOrder = RootOrder::Follow;
+        customKeyIndex = 0;
+        return;
+    }
+
+    // --- Scale (diatonic) mode ---
+    if (orderId == 4)
+    {
+        selectedScaleType = static_cast<ScaleType> (scalePickerCombo.getSelectedId() - 1);
+        const auto* voicing = processorRef.voicingLibrary.getVoicing (
+            practicingVoicingId.isNotEmpty() ? practicingVoicingId : selectedVoicingId);
+        scaleRootPitchClass = voicing ? voicing->rootPitchClass : 0;
+
+        auto scaleIntervals = ScaleModel::getScaleIntervals (selectedScaleType);
+        int numDegrees = static_cast<int> (scaleIntervals.size());
+
+        scaleDegreeSequence = ScaleModel::buildScaleDegreeUpAndBack (numDegrees);
+
+        // Build parallel pitch class sequence for display/stats
+        customKeySequence.clear();
+        for (int deg : scaleDegreeSequence)
+        {
+            // deg can be numDegrees (octave) so wrap with modulo
+            int pc = (scaleRootPitchClass + scaleIntervals[static_cast<size_t> (deg % numDegrees)]) % 12;
+            customKeySequence.push_back (pc);
+        }
+
+        rootOrder = RootOrder::Scale;
+        customKeyIndex = 0;
+        currentScaleDegree = 0;
+        return;
+    }
+
+    // --- Chromatic / Random (existing logic) ---
     customAllowedKeys.clear();
     for (int i = 0; i < 12; ++i)
         if (keyToggles[i].getToggleState())
@@ -1365,14 +1559,15 @@ void PracticePanel::buildCustomKeySequence()
 
     if (customAllowedKeys.empty())
     {
-        // Nothing selected — use all
+        // Nothing selected -- use all
         for (int i = 0; i < 12; ++i)
             customAllowedKeys.insert (i);
     }
 
-    rootOrder = (orderCombo.getSelectedId() == 2) ? RootOrder::Chromatic : RootOrder::Random;
+    rootOrder = (orderId == 2) ? RootOrder::Chromatic : RootOrder::Random;
 
     customKeySequence.clear();
+    scaleDegreeSequence.clear();
     customKeySequence.assign (customAllowedKeys.begin(), customAllowedKeys.end());
 
     if (rootOrder == RootOrder::Random)
@@ -1413,12 +1608,33 @@ PracticeChallenge PracticePanel::getNextCustomChallenge()
         customKeyIndex = 0;
     }
 
-    int key = customKeySequence[static_cast<size_t> (customKeyIndex++)];
+    int idx = customKeyIndex++;
+    int key = customKeySequence[static_cast<size_t> (idx)];
+
+    // Track scale degree for diatonic mode
+    if (rootOrder == RootOrder::Scale && ! scaleDegreeSequence.empty())
+        currentScaleDegree = scaleDegreeSequence[static_cast<size_t> (idx)];
 
     PracticeChallenge challenge;
     challenge.voicingId = practicingVoicingId;
-    challenge.keyIndex = key;
-    challenge.rootMidiNote = 48 + key;
+
+    if (rootOrder == RootOrder::Follow)
+    {
+        // Follow mode: customKeySequence stores MIDI root notes (not pitch classes)
+        challenge.rootMidiNote = key;
+        challenge.keyIndex = key % 12;
+    }
+    else
+    {
+        // Chromatic/Random/Scale: key is a pitch class (0-11).
+        // Use voicing's octaveReference to stay in the recorded octave.
+        challenge.keyIndex = key;
+        int semitoneShift = key - (practiceOctaveRef % 12);
+        if (semitoneShift < -6) semitoneShift += 12;
+        if (semitoneShift > 6) semitoneShift -= 12;
+        challenge.rootMidiNote = practiceOctaveRef + semitoneShift;
+    }
+
     return challenge;
 }
 
@@ -2402,4 +2618,59 @@ void PracticePanel::stopMelodyBacking()
 
     backingChordNotes.clear();
     currentBackingChordIndex = -1;
+}
+
+// --- Follow/Scale mode helpers ---
+
+std::vector<int> PracticePanel::computeTargetNotes (const Voicing& v,
+                                                     const PracticeChallenge& challenge)
+{
+    if (rootOrder == RootOrder::Scale)
+        return ScaleModel::diatonicTranspose (v, selectedScaleType,
+                                              scaleRootPitchClass, currentScaleDegree,
+                                              practiceOctaveRef);
+
+    return VoicingLibrary::transposeToKey (v, challenge.rootMidiNote);
+}
+
+void PracticePanel::updateScalePickerAvailability()
+{
+    const auto* voicing = processorRef.voicingLibrary.getVoicing (
+        practicingVoicingId.isNotEmpty() ? practicingVoicingId : selectedVoicingId);
+    if (voicing == nullptr)
+        return;
+
+    for (int i = 0; i < static_cast<int> (ScaleType::NumScaleTypes); ++i)
+    {
+        auto st = static_cast<ScaleType> (i);
+        bool fits = ScaleModel::voicingFitsInScale (*voicing, st, voicing->rootPitchClass);
+        scalePickerCombo.setItemEnabled (i + 1, fits);
+    }
+
+    // If current selection is disabled, select the first enabled one
+    auto current = static_cast<ScaleType> (scalePickerCombo.getSelectedId() - 1);
+    if (voicing != nullptr
+        && ! ScaleModel::voicingFitsInScale (*voicing, current, voicing->rootPitchClass))
+    {
+        for (int i = 0; i < static_cast<int> (ScaleType::NumScaleTypes); ++i)
+        {
+            if (ScaleModel::voicingFitsInScale (*voicing, static_cast<ScaleType> (i),
+                                                voicing->rootPitchClass))
+            {
+                scalePickerCombo.setSelectedId (i + 1, juce::dontSendNotification);
+                break;
+            }
+        }
+    }
+}
+
+void PracticePanel::populateMelodyPicker()
+{
+    melodyPickerCombo.clear();
+    const auto& melodies = processorRef.melodyLibrary.getAllMelodies();
+    for (int i = 0; i < static_cast<int> (melodies.size()); ++i)
+        melodyPickerCombo.addItem (melodies[static_cast<size_t> (i)].name, i + 1);
+
+    if (melodyPickerCombo.getNumItems() > 0)
+        melodyPickerCombo.setSelectedId (1, juce::dontSendNotification);
 }

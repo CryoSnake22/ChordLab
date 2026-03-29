@@ -27,6 +27,7 @@ set(SOURCE_FILES Source/BeatIndicatorComponent.cpp Source/BeatIndicatorComponent
                  Source/MidiFileUtils.cpp Source/MidiFileUtils.h
                  Source/ProgressionModel.cpp Source/ProgressionModel.h
                  Source/ProgressionRecorder.cpp Source/ProgressionRecorder.h
+                 Source/ScaleModel.cpp Source/ScaleModel.h
                  Source/ProgressionChartComponent.cpp Source/ProgressionChartComponent.h
                  Source/ProgressionLibraryPanel.cpp Source/ProgressionLibraryPanel.h
                  Source/ChordyKeyboardComponent.cpp Source/ChordyKeyboardComponent.h

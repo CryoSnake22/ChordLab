@@ -8,13 +8,14 @@
 #include "ProgressionChartComponent.h"
 #include "MelodyModel.h"
 #include "MelodyChartComponent.h"
+#include "ScaleModel.h"
 #include <set>
 #include <random>
 
 class AudioPluginAudioProcessor;
 class ChordyKeyboardComponent;
 
-enum class RootOrder { Chromatic, Random };
+enum class RootOrder { Chromatic, Random, Follow, Scale };
 enum class PracticeType { Voicing, Progression, Melody };
 
 class PracticePanel : public juce::Component
@@ -119,8 +120,23 @@ private:
     int customKeyIndex = 0;
     std::mt19937 rng { std::random_device{}() };
 
+    // Follow/Scale mode state
+    ScaleType selectedScaleType = ScaleType::Major;
+    int scaleRootPitchClass = 0;
+    enum class FollowSource { Scale, Melody };
+    FollowSource followSource = FollowSource::Scale;
+    juce::String followMelodyId;
+    int currentScaleDegree = 0;
+    std::vector<int> scaleDegreeSequence;
+
+    // Follow/Scale UI components
+    juce::ComboBox scalePickerCombo;
+    juce::ComboBox followSourceCombo;
+    juce::ComboBox melodyPickerCombo;
+
     bool practicing = false;
     juce::String practicingVoicingId;  // which voicing we're practicing
+    int practiceOctaveRef = 60;       // voicing's octaveReference (MIDI note of root when recorded)
     PracticeChallenge currentChallenge;
     std::vector<int> targetNotes;   // absolute MIDI notes for current challenge
     bool challengeCompleted = false;
@@ -188,6 +204,10 @@ private:
     void buildCustomKeySequence();
     PracticeChallenge getNextCustomChallenge();
     void loadNextChallenge();
+    std::vector<int> computeTargetNotes (const Voicing& v, const PracticeChallenge& challenge);
+    void updateScalePickerAvailability();
+    void populateMelodyPicker();
+    void updateFollowScaleVisibility();
     void updateTimedPractice (const std::vector<int>& activeNotes);
     void updateUntimedPractice (const std::vector<int>& activeNotes);
     void updateProgressionPractice (const std::vector<int>& activeNotes);
