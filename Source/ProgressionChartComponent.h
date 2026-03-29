@@ -65,7 +65,7 @@ private:
     double dragOrigStartBeat = 0.0;
     double dragOrigDuration = 0.0;
 
-    static constexpr int beatsPerRow = 16;
+    int beatsPerRow = 16;
     static constexpr int simpleRowHeight = 30;
     static constexpr int rowGap = 4;
     static constexpr int leftPad = 4;

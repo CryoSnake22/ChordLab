@@ -263,12 +263,30 @@ void PracticePanel::resized()
     auto area = getLocalBounds().reduced (ChordyTheme::panelPadding);
 
     // Layout bottom-up: fixed controls at bottom, chart fills remaining top
-    statsLabel.setBounds (area.removeFromBottom (24));
-    area.removeFromBottom (2);
-    timingFeedbackLabel.setBounds (area.removeFromBottom (20));
-    area.removeFromBottom (2);
-    feedbackLabel.setBounds (area.removeFromBottom (24));
-    area.removeFromBottom (4);
+    // Feedback/stats only take space when they have content
+    if (statsLabel.getText().isNotEmpty())
+    {
+        statsLabel.setBounds (area.removeFromBottom (20));
+        area.removeFromBottom (2);
+    }
+    else
+        statsLabel.setBounds (0, 0, 0, 0);
+
+    if (timingFeedbackLabel.getText().isNotEmpty())
+    {
+        timingFeedbackLabel.setBounds (area.removeFromBottom (18));
+        area.removeFromBottom (2);
+    }
+    else
+        timingFeedbackLabel.setBounds (0, 0, 0, 0);
+
+    if (feedbackLabel.getText().isNotEmpty())
+    {
+        feedbackLabel.setBounds (area.removeFromBottom (22));
+        area.removeFromBottom (2);
+    }
+    else
+        feedbackLabel.setBounds (0, 0, 0, 0);
 
     // Key selector (conditionally visible)
     if (showingKeySelector)
@@ -322,15 +340,14 @@ void PracticePanel::resized()
     customButton.setBounds (buttonRow);
     area.removeFromBottom (4);
 
-    // Voicing save/see button (only visible when chord clicked in progression preview)
+    // Target label + voicing button share the same row area
+    auto targetRow = area.removeFromBottom (24);
     if (voicingButton.isVisible())
     {
-        voicingButton.setBounds (area.removeFromBottom (26));
-        area.removeFromBottom (4);
+        voicingButton.setBounds (targetRow.removeFromRight (120));
+        targetRow.removeFromRight (4);
     }
-
-    // Target label
-    targetLabel.setBounds (area.removeFromBottom (24));
+    targetLabel.setBounds (targetRow);
     area.removeFromBottom (4);
 
     // Header

@@ -14,6 +14,10 @@ void ProgressionChartComponent::setProgression (Progression* prog)
     progressionReadOnly = nullptr;
     selectedChordIndex = -1;
     noteStates.clear();
+    if (prog != nullptr && prog->totalBeats > 0 && prog->totalBeats <= 16)
+        beatsPerRow = juce::jmax (4, static_cast<int> (std::ceil (prog->totalBeats)));
+    else
+        beatsPerRow = 16;
     repaint();
 }
 
@@ -23,6 +27,10 @@ void ProgressionChartComponent::setProgressionReadOnly (const Progression* prog)
     progression = nullptr;
     selectedChordIndex = -1;
     noteStates.clear();
+    if (prog != nullptr && prog->totalBeats > 0 && prog->totalBeats <= 16)
+        beatsPerRow = juce::jmax (4, static_cast<int> (std::ceil (prog->totalBeats)));
+    else
+        beatsPerRow = 16;
     repaint();
 }
 

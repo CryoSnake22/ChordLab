@@ -605,24 +605,29 @@ void VoicingLibraryPanel::selectVoicingById (const juce::String& id)
 
 void VoicingLibraryPanel::populateConfirmFields()
 {
-    // Auto-detect chord for pre-filling
-    auto notes = VoicingLibrary::transposeToKey (pendingVoicing, pendingVoicing.octaveReference);
-    auto detected = ChordDetector::detect (notes);
+    // If editing an existing voicing (has a name), preserve its fields
+    bool isEdit = pendingVoicing.name.isNotEmpty();
 
-    // Pre-fill name
-    if (detected.isValid())
-        confirmNameEditor.setText (detected.displayName + " voicing");
+    if (isEdit)
+    {
+        confirmNameEditor.setText (pendingVoicing.name);
+        confirmAltEditor.setText (pendingVoicing.alterations);
+    }
     else
-        confirmNameEditor.setText ("Voicing " + juce::String (processorRef.voicingLibrary.size() + 1));
+    {
+        // New voicing — auto-detect for pre-filling
+        auto notes = VoicingLibrary::transposeToKey (pendingVoicing, pendingVoicing.octaveReference);
+        auto detected = ChordDetector::detect (notes);
+        if (detected.isValid())
+            confirmNameEditor.setText (detected.displayName + " voicing");
+        else
+            confirmNameEditor.setText ("Voicing " + juce::String (processorRef.voicingLibrary.size() + 1));
+        confirmAltEditor.clear();
+    }
 
-    // Pre-fill root
+    // Pre-fill root and quality (always)
     confirmRootCombo.setSelectedId (pendingVoicing.rootPitchClass + 1, juce::dontSendNotification);
-
-    // Pre-fill quality
     confirmQualityCombo.setSelectedId (comboIdFromQuality (pendingVoicing.quality), juce::dontSendNotification);
-
-    // Clear alterations
-    confirmAltEditor.clear();
 }
 
 void VoicingLibraryPanel::onConfirmSave()
@@ -638,6 +643,8 @@ void VoicingLibraryPanel::onConfirmSave()
     pendingVoicing.alterations = confirmAltEditor.getText().trim();
 
     auto savedId = pendingVoicing.id;
+    // Remove old version if editing an existing voicing
+    processorRef.voicingLibrary.removeVoicing (savedId);
     processorRef.voicingLibrary.addVoicing (pendingVoicing);
     processorRef.saveLibrariesToDisk();
     pendingVoicing = {};
