@@ -440,6 +440,12 @@ void VoicingLibraryPanel::setButtonsEnabled (bool enabled)
     playButton.setEnabled (enabled);
     editButton.setEnabled (enabled);
     deleteButton.setEnabled (enabled);
+    voicingList.setEnabled (enabled);
+    moreButton.setEnabled (enabled);
+    searchEditor.setEnabled (enabled);
+    folderCombo.setEnabled (enabled);
+    qualityFilter.setEnabled (enabled);
+    statsChart.setInterceptsMouseClicks (enabled, enabled);
 }
 
 void VoicingLibraryPanel::updateDisplayedVoicings()
@@ -707,11 +713,15 @@ void VoicingLibraryPanel::paintListBoxItem (int rowNumber, juce::Graphics& g,
 
     g.setColour (juce::Colour (ChordyTheme::textPrimary));
     g.setFont (14.0f);
-    g.drawText (v.name, 8, 0, width - 80, height, juce::Justification::centredLeft);
+    g.drawText (v.name, 8, 2, width - 80, 18, juce::Justification::centredLeft);
 
-    // Show quality + alterations badge
+    // Date + quality on second line
     g.setColour (juce::Colour (ChordyTheme::textSecondary));
     g.setFont (11.0f);
+    juce::String dateStr = v.createdAt > 0
+        ? juce::Time (v.createdAt).formatted ("%b %d, %Y")
+        : "";
+    g.drawText (dateStr, 8, 18, width / 2, 14, juce::Justification::centredLeft);
     g.drawText (v.getQualityLabel(),
                 width - 70, 0, 62, height, juce::Justification::centredRight);
 }
@@ -781,22 +791,24 @@ void VoicingLibraryPanel::showMoreMenu()
         {
             if (result == 10) // Import MIDI
             {
-                fileChooser = std::make_unique<juce::FileChooser> (
-                    "Import MIDI file...",
-                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
-                    "*.mid;*.midi");
-                auto flags = juce::FileBrowserComponent::openMode
-                           | juce::FileBrowserComponent::canSelectFiles;
-                fileChooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
-                {
-                    auto f = fc.getResult();
-                    if (! f.existsAsFile()) return;
-                    auto imported = MidiFileUtils::importMidiFile (f);
-                    if (! imported.success || imported.tracks.empty()) return;
-                    // Use first track with notes
-                    auto voicing = MidiFileUtils::midiToVoicing (imported.tracks[0]);
-                    voicing.name = f.getFileNameWithoutExtension();
-                    enterConfirmingWithVoicing (voicing);
+                juce::MessageManager::callAsync ([this] {
+                    fileChooser = std::make_unique<juce::FileChooser> (
+                        "Import MIDI file...",
+                        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+                        "*.mid;*.midi");
+                    auto flags = juce::FileBrowserComponent::openMode
+                               | juce::FileBrowserComponent::canSelectFiles;
+                    fileChooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        if (! f.existsAsFile()) return;
+                        auto imported = MidiFileUtils::importMidiFile (f);
+                        if (! imported.success || imported.tracks.empty()) return;
+                        // Use first track with notes
+                        auto voicing = MidiFileUtils::midiToVoicing (imported.tracks[0]);
+                        voicing.name = f.getFileNameWithoutExtension();
+                        enterConfirmingWithVoicing (voicing);
+                    });
                 });
             }
             else if (result == 11) // Export as MIDI
@@ -805,97 +817,106 @@ void VoicingLibraryPanel::showMoreMenu()
                 if (selectedId.isEmpty()) return;
                 const auto* v = processorRef.voicingLibrary.getVoicing (selectedId);
                 if (v == nullptr) return;
-                auto defaultName = v->name.isNotEmpty() ? v->name : "voicing";
-                fileChooser = std::make_unique<juce::FileChooser> (
-                    "Export as MIDI...",
-                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                        .getChildFile (defaultName + ".mid"),
-                    "*.mid");
-                auto flags = juce::FileBrowserComponent::saveMode
-                           | juce::FileBrowserComponent::warnAboutOverwriting;
                 auto voicingCopy = *v;
-                fileChooser->launchAsync (flags, [voicingCopy] (const juce::FileChooser& fc)
+                auto defaultName = v->name.isNotEmpty() ? v->name : "voicing";
+                juce::MessageManager::callAsync ([this, voicingCopy, defaultName]
                 {
-                    auto f = fc.getResult();
-                    if (f == juce::File()) return;
-                    MidiFileUtils::exportVoicingToMidi (voicingCopy, f);
+                    fileChooser = std::make_unique<juce::FileChooser> (
+                        "Export as MIDI...",
+                        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                            .getChildFile (defaultName + ".mid"),
+                        "*.mid");
+                    auto flags = juce::FileBrowserComponent::saveMode
+                               | juce::FileBrowserComponent::warnAboutOverwriting;
+                    fileChooser->launchAsync (flags, [voicingCopy] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        if (f == juce::File()) return;
+                        MidiFileUtils::exportVoicingToMidi (voicingCopy, f);
+                    });
                 });
             }
             else if (result == 20) // Import Library (.chordy)
             {
-                fileChooser = std::make_unique<juce::FileChooser> (
-                    "Import Library...",
-                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
-                    "*.chordy");
-                auto flags = juce::FileBrowserComponent::openMode
-                           | juce::FileBrowserComponent::canSelectFiles;
-                fileChooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
-                {
-                    auto f = fc.getResult();
-                    if (! f.existsAsFile()) return;
-                    auto imported = LibraryExporter::parseCollection (f);
-                    if (! imported.success) return;
-                    auto merged = LibraryExporter::mergeIntoLibraries (
-                        imported,
-                        processorRef.voicingLibrary,
-                        processorRef.progressionLibrary,
-                        processorRef.melodyLibrary);
-                    processorRef.saveLibrariesToDisk();
-                    refreshFolderCombo();
-                    updateDisplayedVoicings();
-                    juce::AlertWindow::showMessageBoxAsync (
-                        juce::MessageBoxIconType::InfoIcon,
-                        "Import Complete",
-                        "Added " + juce::String (merged.voicingsAdded) + " voicings, "
-                        + juce::String (merged.progressionsAdded) + " progressions, "
-                        + juce::String (merged.melodiesAdded) + " melodies.");
+                juce::MessageManager::callAsync ([this] {
+                    fileChooser = std::make_unique<juce::FileChooser> (
+                        "Import Library...",
+                        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+                        "*.chordy");
+                    auto flags = juce::FileBrowserComponent::openMode
+                               | juce::FileBrowserComponent::canSelectFiles;
+                    fileChooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        if (! f.existsAsFile()) return;
+                        auto imported = LibraryExporter::parseCollection (f);
+                        if (! imported.success) return;
+                        auto merged = LibraryExporter::mergeIntoLibraries (
+                            imported,
+                            processorRef.voicingLibrary,
+                            processorRef.progressionLibrary,
+                            processorRef.melodyLibrary);
+                        processorRef.saveLibrariesToDisk();
+                        refreshFolderCombo();
+                        updateDisplayedVoicings();
+                        juce::AlertWindow::showMessageBoxAsync (
+                            juce::MessageBoxIconType::InfoIcon,
+                            "Import Complete",
+                            "Added " + juce::String (merged.voicingsAdded) + " voicings, "
+                            + juce::String (merged.progressionsAdded) + " progressions, "
+                            + juce::String (merged.melodiesAdded) + " melodies.");
+                    });
                 });
             }
             else if (result == 21) // Export Selected (.chordy)
             {
                 auto ids = getSelectedIds();
                 if (ids.empty()) return;
-                fileChooser = std::make_unique<juce::FileChooser> (
-                    "Export Selected...",
-                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                        .getChildFile ("voicings.chordy"),
-                    "*.chordy");
-                auto flags = juce::FileBrowserComponent::saveMode
-                           | juce::FileBrowserComponent::warnAboutOverwriting;
-                fileChooser->launchAsync (flags, [this, ids] (const juce::FileChooser& fc)
-                {
-                    auto f = fc.getResult();
-                    if (f == juce::File()) return;
-                    LibraryExporter::ExportOptions opts;
-                    opts.collectionName = f.getFileNameWithoutExtension();
-                    opts.voicingIds = ids;
-                    LibraryExporter::exportCollection (opts,
-                        processorRef.voicingLibrary,
-                        processorRef.progressionLibrary,
-                        processorRef.melodyLibrary, f);
+                juce::MessageManager::callAsync ([this, ids] {
+                    fileChooser = std::make_unique<juce::FileChooser> (
+                        "Export Selected...",
+                        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                            .getChildFile ("voicings.chordy"),
+                        "*.chordy");
+                    auto flags = juce::FileBrowserComponent::saveMode
+                               | juce::FileBrowserComponent::warnAboutOverwriting;
+                    fileChooser->launchAsync (flags, [this, ids] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        if (f == juce::File()) return;
+                        LibraryExporter::ExportOptions opts;
+                        opts.collectionName = f.getFileNameWithoutExtension();
+                        opts.voicingIds = ids;
+                        LibraryExporter::exportCollection (opts,
+                            processorRef.voicingLibrary,
+                            processorRef.progressionLibrary,
+                            processorRef.melodyLibrary, f);
+                    });
                 });
             }
             else if (result == 22) // Export All Voicings (.chordy)
             {
-                fileChooser = std::make_unique<juce::FileChooser> (
-                    "Export All Voicings...",
-                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                        .getChildFile ("all_voicings.chordy"),
-                    "*.chordy");
-                auto flags = juce::FileBrowserComponent::saveMode
-                           | juce::FileBrowserComponent::warnAboutOverwriting;
-                fileChooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
-                {
-                    auto f = fc.getResult();
-                    if (f == juce::File()) return;
-                    LibraryExporter::ExportOptions opts;
-                    opts.collectionName = f.getFileNameWithoutExtension();
-                    opts.includeProgressions = false;
-                    opts.includeMelodies = false;
-                    LibraryExporter::exportCollection (opts,
-                        processorRef.voicingLibrary,
-                        processorRef.progressionLibrary,
-                        processorRef.melodyLibrary, f);
+                juce::MessageManager::callAsync ([this] {
+                    fileChooser = std::make_unique<juce::FileChooser> (
+                        "Export All Voicings...",
+                        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                            .getChildFile ("all_voicings.chordy"),
+                        "*.chordy");
+                    auto flags = juce::FileBrowserComponent::saveMode
+                               | juce::FileBrowserComponent::warnAboutOverwriting;
+                    fileChooser->launchAsync (flags, [this] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        if (f == juce::File()) return;
+                        LibraryExporter::ExportOptions opts;
+                        opts.collectionName = f.getFileNameWithoutExtension();
+                        opts.includeProgressions = false;
+                        opts.includeMelodies = false;
+                        LibraryExporter::exportCollection (opts,
+                            processorRef.voicingLibrary,
+                            processorRef.progressionLibrary,
+                            processorRef.melodyLibrary, f);
+                    });
                 });
             }
             else if (result == 1)
@@ -1050,7 +1071,7 @@ void VoicingLibraryPanel::showContextMenu (int rowIndex)
 
     juce::PopupMenu menu;
     menu.addSubMenu ("Move to Folder", buildFolderSubmenu (100));
-    menu.addItem (2, "Export as MIDI...");
+    menu.addItem (2, "Export as MIDI...", getSelectionCount() == 1);
     menu.addSeparator();
     menu.addItem (1, "Delete");
 
@@ -1066,20 +1087,22 @@ void VoicingLibraryPanel::showContextMenu (int rowIndex)
                 if (selectedId.isEmpty()) return;
                 const auto* v = processorRef.voicingLibrary.getVoicing (selectedId);
                 if (v == nullptr) return;
-                auto defaultName = v->name.isNotEmpty() ? v->name : "voicing";
-                fileChooser = std::make_unique<juce::FileChooser> (
-                    "Export as MIDI...",
-                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
-                        .getChildFile (defaultName + ".mid"),
-                    "*.mid");
-                auto flags = juce::FileBrowserComponent::saveMode
-                           | juce::FileBrowserComponent::warnAboutOverwriting;
                 auto voicingCopy = *v;
-                fileChooser->launchAsync (flags, [voicingCopy] (const juce::FileChooser& fc)
-                {
-                    auto f = fc.getResult();
-                    if (f == juce::File()) return;
-                    MidiFileUtils::exportVoicingToMidi (voicingCopy, f);
+                auto defaultName = v->name.isNotEmpty() ? v->name : juce::String ("voicing");
+                juce::MessageManager::callAsync ([this, voicingCopy, defaultName] {
+                    fileChooser = std::make_unique<juce::FileChooser> (
+                        "Export as MIDI...",
+                        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                            .getChildFile (defaultName + ".mid"),
+                        "*.mid");
+                    auto flags = juce::FileBrowserComponent::saveMode
+                               | juce::FileBrowserComponent::warnAboutOverwriting;
+                    fileChooser->launchAsync (flags, [voicingCopy] (const juce::FileChooser& fc)
+                    {
+                        auto f = fc.getResult();
+                        if (f == juce::File()) return;
+                        MidiFileUtils::exportVoicingToMidi (voicingCopy, f);
+                    });
                 });
             }
             else if (result >= 100)

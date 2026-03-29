@@ -114,6 +114,7 @@ static const juce::Identifier ID_noteDurations ("noteDurations");
 static const juce::Identifier ID_rawMidi ("rawMidi");
 static const juce::Identifier ID_quantizeResolution ("quantizeResolution");
 static const juce::Identifier ID_folderId ("folderId");
+static const juce::Identifier ID_createdAt ("createdAt");
 
 static juce::String intsToString (const std::vector<int>& v)
 {
@@ -274,6 +275,7 @@ juce::ValueTree ProgressionLibrary::progressionToValueTree (const Progression& p
     tree.setProperty (ID_rawMidi, midiSequenceToString (p.rawMidi), nullptr);
     tree.setProperty (ID_quantizeResolution, p.quantizeResolution, nullptr);
     tree.setProperty (ID_folderId, p.folderId, nullptr);
+    tree.setProperty (ID_createdAt, p.createdAt, nullptr);
 
     for (const auto& chord : p.chords)
         tree.appendChild (chordToValueTree (chord), nullptr);
@@ -295,6 +297,7 @@ Progression ProgressionLibrary::progressionFromValueTree (const juce::ValueTree&
     p.rawMidi = stringToMidiSequence (tree.getProperty (ID_rawMidi).toString());
     p.quantizeResolution = tree.getProperty (ID_quantizeResolution, 0.0);
     p.folderId = tree.getProperty (ID_folderId, "").toString();
+    p.createdAt = static_cast<juce::int64> (tree.getProperty (ID_createdAt, 0));
 
     for (int i = 0; i < tree.getNumChildren(); ++i)
     {

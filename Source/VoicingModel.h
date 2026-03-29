@@ -16,6 +16,7 @@ struct Voicing
     std::vector<int> velocities;  // per-note velocities (parallel to intervals)
     int octaveReference = 60;     // MIDI note of root when recorded
     juce::String folderId;         // folder UUID (empty = root/unfiled)
+    juce::int64 createdAt = 0;     // unix timestamp (ms) when created
 
     bool isValid() const { return ! intervals.empty() && ! id.isEmpty(); }
 

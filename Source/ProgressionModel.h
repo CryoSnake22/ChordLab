@@ -56,6 +56,7 @@ struct Progression
     juce::MidiMessageSequence rawMidi; // original recording (beat-timestamped)
     double quantizeResolution = 0.0;  // 0=raw, 1.0=beat, 0.5=half, 0.25=quarter
     juce::String folderId;            // folder UUID (empty = root/unfiled)
+    juce::int64 createdAt = 0;        // unix timestamp (ms) when created
 
     bool isValid() const { return ! id.isEmpty() && ! chords.empty(); }
 };

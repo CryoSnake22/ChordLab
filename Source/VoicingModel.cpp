@@ -39,6 +39,7 @@ Voicing VoicingLibrary::createFromNotes (const std::vector<int>& midiNotes,
     Voicing v;
     v.id = juce::Uuid().toString();
     v.name = name;
+    v.createdAt = juce::Time::currentTimeMillis();
 
     if (midiNotes.empty())
         return v;
@@ -121,6 +122,7 @@ static const juce::Identifier ID_intervals ("intervals");
 static const juce::Identifier ID_velocities ("velocities");
 static const juce::Identifier ID_octaveRef ("octaveRef");
 static const juce::Identifier ID_folderId ("folderId");
+static const juce::Identifier ID_createdAt ("createdAt");
 
 static juce::String intervalsToString (const std::vector<int>& intervals)
 {
@@ -155,6 +157,7 @@ juce::ValueTree VoicingLibrary::voicingToValueTree (const Voicing& v)
     tree.setProperty (ID_velocities, intervalsToString (v.velocities), nullptr);
     tree.setProperty (ID_octaveRef, v.octaveReference, nullptr);
     tree.setProperty (ID_folderId, v.folderId, nullptr);
+    tree.setProperty (ID_createdAt, v.createdAt, nullptr);
     return tree;
 }
 
@@ -170,6 +173,7 @@ Voicing VoicingLibrary::voicingFromValueTree (const juce::ValueTree& tree)
     v.velocities = stringToIntervals (tree.getProperty (ID_velocities).toString());
     v.octaveReference = tree.getProperty (ID_octaveRef, 60);
     v.folderId = tree.getProperty (ID_folderId, "").toString();
+    v.createdAt = static_cast<juce::int64> (tree.getProperty (ID_createdAt, 0));
     return v;
 }
 

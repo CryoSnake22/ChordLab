@@ -110,7 +110,9 @@ Voicing MidiFileUtils::midiToVoicing (const juce::MidiMessageSequence& track)
         }
     }
 
-    return VoicingLibrary::createFromNotes (notes, "", velocities);
+    auto v = VoicingLibrary::createFromNotes (notes, "", velocities);
+    v.createdAt = juce::Time::currentTimeMillis();
+    return v;
 }
 
 Progression MidiFileUtils::midiToProgression (const juce::MidiMessageSequence& track,
@@ -118,6 +120,7 @@ Progression MidiFileUtils::midiToProgression (const juce::MidiMessageSequence& t
 {
     Progression p;
     p.id = juce::Uuid().toString();
+    p.createdAt = juce::Time::currentTimeMillis();
     p.bpm = bpm;
     p.timeSignatureNum = tsNum;
     p.timeSignatureDen = tsDen;
@@ -155,6 +158,7 @@ Melody MidiFileUtils::midiToMelody (const juce::MidiMessageSequence& track,
 {
     Melody m;
     m.id = juce::Uuid().toString();
+    m.createdAt = juce::Time::currentTimeMillis();
     m.bpm = bpm;
     m.timeSignatureNum = tsNum;
     m.timeSignatureDen = tsDen;
