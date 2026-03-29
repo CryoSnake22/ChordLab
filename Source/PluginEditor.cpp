@@ -654,7 +654,7 @@ void AudioPluginAudioProcessorEditor::startVoicingPreview (const std::vector<int
   // Send MIDI directly to synth with recorded velocities
   for (size_t i = 0; i < notes.size(); ++i)
   {
-    float vel = (i < velocities.size())
+    float vel = (i < velocities.size() && velocities[i] > 0)
         ? static_cast<float>(velocities[i]) / 127.0f
         : 0.8f;
     processorRef.addPreviewMidi (juce::MidiMessage::noteOn (channel, notes[i], vel));

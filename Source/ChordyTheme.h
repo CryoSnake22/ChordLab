@@ -58,10 +58,10 @@ constexpr const char *fontFamily = "Avenir Next";
 constexpr float fontTitle = 22.0f;
 constexpr float fontChordDisplay = 36.0f;
 constexpr float fontChordBig = 48.0f;
-constexpr float fontSectionHead = 14.0f;
-constexpr float fontBody = 13.0f;
-constexpr float fontSmall = 11.0f;
-constexpr float fontMeta = 10.0f;
+constexpr float fontSectionHead = 15.0f;
+constexpr float fontBody = 14.0f;
+constexpr float fontSmall = 12.0f;
+constexpr float fontMeta = 11.0f;
 
 // --- Chart ---
 constexpr juce::uint32 chartGrid = 0xFF2A2A2A;

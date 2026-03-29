@@ -1098,11 +1098,11 @@ void MelodyLibraryPanel::paintListBoxItem (int rowNumber, juce::Graphics& g,
 
     // Name on top line
     g.setColour (juce::Colour (ChordyTheme::textPrimary));
-    g.setFont (14.0f);
-    g.drawText (m.name, 8, 2, width - 16, 16, juce::Justification::centredLeft);
+    g.setFont (15.0f);
+    g.drawText (m.name, 8, 2, width - 16, 18, juce::Justification::centredLeft);
 
     // Second line: chord context + date
-    g.setFont (11.0f);
+    g.setFont (12.0f);
     auto ctx = m.getChordContextLabel();
     if (ctx.isNotEmpty())
     {

@@ -740,15 +740,7 @@ void ProgressionChartComponent::paintDetailed (juce::Graphics& g, const Progress
                     g.drawRoundedRectangle (rect, 2.0f, 1.5f);
                 }
 
-                // Note name — always show
-                if (rect.getHeight() > 7.0f)
-                {
-                    bool darkText = (state == NoteState::Correct || state == NoteState::Missed);
-                    g.setColour (juce::Colour (darkText ? 0xFF1A1A1A : ChordyTheme::textSecondary));
-                    g.setFont (juce::FontOptions (8.0f));
-                    g.drawText (ChordDetector::noteNameFromPitchClass (midiNote % 12),
-                                rect.reduced (1.0f, 0), juce::Justification::centred, true);
-                }
+                // Note names removed — too small to be useful in preview
             }
         }
 

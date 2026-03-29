@@ -166,7 +166,7 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
     buffer.clear(i, 0, buffer.getNumSamples());
 
-  // Capture note velocities before keyboardState processes the buffer
+  // Capture note velocities from external MIDI input
   for (const auto meta : midiMessages)
   {
     auto msg = meta.getMessage();
@@ -179,6 +179,16 @@ void AudioPluginAudioProcessor::processBlock(juce::AudioBuffer<float> &buffer,
   // injectIndirectEvents=true allows on-screen keyboard clicks to generate MIDI output.
   keyboardState.processNextMidiBuffer(midiMessages, 0, buffer.getNumSamples(),
                                       true);
+
+  // Capture velocities again — on-screen/QWERTY keyboard events are injected
+  // by processNextMidiBuffer and weren't in the buffer during the first pass
+  for (const auto meta : midiMessages)
+  {
+    auto msg = meta.getMessage();
+    if (msg.isNoteOn() && msg.getVelocity() > 0)
+      noteVelocities[msg.getNoteNumber()].store(
+          static_cast<uint8_t>(msg.getVelocity()), std::memory_order_relaxed);
+  }
 
   // Update atomic note bitfield for lock-free GUI reads
   int channel = static_cast<int>(*apvts.getRawParameterValue("midiChannel"));

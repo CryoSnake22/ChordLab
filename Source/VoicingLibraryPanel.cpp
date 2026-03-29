@@ -719,12 +719,12 @@ void VoicingLibraryPanel::paintListBoxItem (int rowNumber, juce::Graphics& g,
         g.fillAll (juce::Colour (ChordyTheme::bgSurface));
 
     g.setColour (juce::Colour (ChordyTheme::textPrimary));
-    g.setFont (14.0f);
+    g.setFont (15.0f);
     g.drawText (v.name, 8, 2, width - 80, 18, juce::Justification::centredLeft);
 
     // Date + quality on second line
     g.setColour (juce::Colour (ChordyTheme::textSecondary));
-    g.setFont (11.0f);
+    g.setFont (12.0f);
     juce::String dateStr = v.createdAt > 0
         ? juce::Time (v.createdAt).formatted ("%b %d, %Y")
         : "";
