@@ -13,27 +13,56 @@ namespace LilyPondExporter
 namespace
 {
 
-// Pitch class -> LilyPond note name (no octave marks)
-juce::String pitchClassToLy (int pc)
+// Whether a key signature uses sharps (true) or flats (false).
+// Sharp keys: G, D, A, E, B, F#/Gb (we pick sharps for Gb)
+// Flat keys: F, Bb, Eb, Ab, Db, C is neutral (flats by default)
+bool keyUsesSharps (int keyPitchClass)
 {
-    static const char* names[] = {
-        "c", "des", "d", "ees", "e", "f",
-        "ges", "g", "aes", "a", "bes", "b"
-    };
-    pc = ((pc % 12) + 12) % 12;
-    return names[pc];
+    // pitch classes that are sharp keys: G=7, D=2, A=9, E=4, B=11, F#=6
+    switch (((keyPitchClass % 12) + 12) % 12)
+    {
+        case 2: case 4: case 6: case 7: case 9: case 11:
+            return true;
+        default:
+            return false;
+    }
 }
+
+// Pitch class -> LilyPond note name (no octave marks), enharmonic-aware
+juce::String pitchClassToLy (int pc, bool useSharps)
+{
+    pc = ((pc % 12) + 12) % 12;
+
+    if (useSharps)
+    {
+        static const char* names[] = {
+            "c", "cis", "d", "dis", "e", "f",
+            "fis", "g", "gis", "a", "ais", "b"
+        };
+        return names[pc];
+    }
+    else
+    {
+        static const char* names[] = {
+            "c", "des", "d", "ees", "e", "f",
+            "ges", "g", "aes", "a", "bes", "b"
+        };
+        return names[pc];
+    }
+}
+
+// Thread-local context for current key's enharmonic preference
+// (avoids passing useSharps through every function)
+static thread_local bool g_useSharps = false;
 
 // MIDI note number -> LilyPond absolute pitch (e.g., "c'", "bes,")
 // In \absolute mode: c (no marks) = C3 = MIDI 48, c' = C4 = MIDI 60
 juce::String midiNoteToLyPitch (int midiNote)
 {
     int pc = ((midiNote % 12) + 12) % 12;
-    // LilyPond octave: no marks = octave 3 (C3 = MIDI 48)
-    // Each ' raises one octave, each , lowers one
-    int lyOctave = midiNote / 12 - 4;  // MIDI 48 -> 0, MIDI 60 -> 1, MIDI 36 -> -1
+    int lyOctave = midiNote / 12 - 4;
 
-    juce::String result = pitchClassToLy (pc);
+    juce::String result = pitchClassToLy (pc, g_useSharps);
 
     if (lyOctave > 0)
         for (int i = 0; i < lyOctave; ++i)
@@ -90,7 +119,7 @@ juce::String qualityToLyChordMode (ChordQuality q)
 // Pitch class -> LilyPond chordmode root (in octave below middle C for bass voicing)
 juce::String pitchClassToLyChordRoot (int pc)
 {
-    return pitchClassToLy (pc);
+    return pitchClassToLy (pc, g_useSharps);
 }
 
 // Snap a beat duration to the nearest representable note value.
@@ -253,9 +282,18 @@ juce::String generateHeader (const ExportOptions& opts)
     return ly;
 }
 
-// Note name for display (e.g., "C", "Db")
+// Note name for display (e.g., "C", "F#"), enharmonic-aware
 juce::String keyDisplayName (int pitchClass)
 {
+    if (keyUsesSharps (pitchClass))
+    {
+        static const char* names[] = {
+            "C", "C#", "D", "D#", "E", "F",
+            "F#", "G", "G#", "A", "A#", "B"
+        };
+        int pc = ((pitchClass % 12) + 12) % 12;
+        return names[pc];
+    }
     return ChordDetector::noteNameFromPitchClass (pitchClass);
 }
 
@@ -312,6 +350,7 @@ juce::String generateVoicingLy (const Voicing& v, const ExportOptions& opts)
     juce::String ly = generateHeader (opts);
 
     // Build chord names and notes for each key
+    // 1 voicing per bar (whole note), 4 bars per line
     juce::String chordNames;
     juce::String upperNotes;
     juce::String lowerNotes;
@@ -319,6 +358,7 @@ juce::String generateVoicingLy (const Voicing& v, const ExportOptions& opts)
     for (size_t ki = 0; ki < opts.keys.size(); ++ki)
     {
         int targetPc = opts.keys[ki];
+        g_useSharps = keyUsesSharps (targetPc);
         int semitones = targetPc - v.rootPitchClass;
 
         // Compute the root MIDI note in the same octave region as original
@@ -329,24 +369,25 @@ juce::String generateVoicingLy (const Voicing& v, const ExportOptions& opts)
 
         auto midiNotes = VoicingLibrary::transposeToKey (v, rootMidi);
 
-        // Chord name in chordmode
+        // Chord name in chordmode (whole note = 1 bar)
         chordNames += pitchClassToLyChordRoot (targetPc);
         chordNames += "1";
         chordNames += qualityToLyChordMode (v.quality);
-        if (ki + 1 < opts.keys.size())
-            chordNames += " \\break\n    ";
+        chordNames += " ";
 
         // Split into treble/bass
         std::vector<int> treble, bass;
         splitTrebleBass (midiNotes, treble, bass);
 
-        upperNotes += midiNotesToLyChord (treble, "1");
-        lowerNotes += midiNotesToLyChord (bass, "1");
+        upperNotes += midiNotesToLyChord (treble, "1") + " ";
+        lowerNotes += midiNotesToLyChord (bass, "1") + " ";
 
-        if (ki + 1 < opts.keys.size())
+        // Line break every 4 bars
+        if ((ki + 1) % 4 == 0 && ki + 1 < opts.keys.size())
         {
-            upperNotes += " \\break\n    ";
-            lowerNotes += " \\break\n    ";
+            chordNames += "\\break\n    ";
+            upperNotes += "\\break\n    ";
+            lowerNotes += "\\break\n    ";
         }
     }
 
@@ -400,14 +441,14 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
     for (size_t ki = 0; ki < opts.keys.size(); ++ki)
     {
         int targetPc = opts.keys[ki];
+        g_useSharps = keyUsesSharps (targetPc);
         int semitones = targetPc - prog.keyPitchClass;
 
         auto transposed = (semitones == 0)
             ? prog
             : ProgressionLibrary::transposeProgression (prog, semitones);
 
-        // Key label
-        ly += "\\markup { \\bold \\large \"Key of " + keyDisplayName (targetPc) + "\" }\n";
+        // Score with key label in header (prevents orphan labels at page breaks)
         ly += "\\score {\n  <<\n";
 
         // Chord symbols
@@ -593,6 +634,7 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
         }
 
         ly += "  >>\n";
+        ly += "  \\header { piece = \\markup { \\bold \\large \"Key of " + keyDisplayName (targetPc) + "\" } }\n";
         ly += "  \\layout { indent = 0 }\n";
         ly += "}\n\n";
     }
@@ -610,6 +652,7 @@ juce::String generateMelodyLy (const Melody& mel, const ExportOptions& opts)
     for (size_t ki = 0; ki < opts.keys.size(); ++ki)
     {
         int targetPc = opts.keys[ki];
+        g_useSharps = keyUsesSharps (targetPc);
         int semitones = targetPc - mel.keyPitchClass;
 
         auto transposed = (semitones == 0)
@@ -620,8 +663,7 @@ juce::String generateMelodyLy (const Melody& mel, const ExportOptions& opts)
         int keyRootMidi = 60 + (transposed.keyPitchClass % 12);
         if (keyRootMidi > 66) keyRootMidi -= 12;  // keep in C4-F#4 range
 
-        // Key label
-        ly += "\\markup { \\bold \\large \"Key of " + keyDisplayName (targetPc) + "\" }\n";
+        // Score with key label in header (prevents orphan labels at page breaks)
         ly += "\\score {\n  <<\n";
 
         // Chord symbols from chord contexts
@@ -722,6 +764,7 @@ juce::String generateMelodyLy (const Melody& mel, const ExportOptions& opts)
         ly += "    }\n";
 
         ly += "  >>\n";
+        ly += "  \\header { piece = \\markup { \\bold \\large \"Key of " + keyDisplayName (targetPc) + "\" } }\n";
         ly += "  \\layout { indent = 0 }\n";
         ly += "}\n\n";
     }
