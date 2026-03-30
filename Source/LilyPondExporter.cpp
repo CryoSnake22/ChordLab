@@ -458,19 +458,30 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
             ly += "      \\set chordChanges = ##f\n      ";
 
             double chordPos = 0.0;
-            for (const auto& chord : transposed.chords)
+            for (size_t ci = 0; ci < transposed.chords.size(); ++ci)
             {
-                // Rest before this chord?
+                const auto& chord = transposed.chords[ci];
+
+                // Snap small gaps (< 0.2 beats) by skipping the spacer
                 double gap = chord.startBeat - chordPos;
-                if (gap > 0.1)
+                if (gap > 0.2)
                 {
                     auto gapTokens = decomposeDuration (gap, std::fmod (chordPos, beatsPerBar), beatsPerBar);
                     for (const auto& tok : gapTokens)
                         ly += "s" + tok.duration + " ";
                 }
 
-                // Chord symbol with duration
-                auto durTokens = decomposeDuration (chord.durationBeats,
+                // Compute effective duration (extend to cover small gap to next chord)
+                double effectiveDur = chord.durationBeats;
+                if (ci + 1 < transposed.chords.size())
+                {
+                    double nextStart = transposed.chords[ci + 1].startBeat;
+                    double microGap = nextStart - (chord.startBeat + effectiveDur);
+                    if (microGap > 0.0 && microGap < 0.2)
+                        effectiveDur += microGap;
+                }
+
+                auto durTokens = decomposeDuration (effectiveDur,
                                                      std::fmod (chord.startBeat, beatsPerBar),
                                                      beatsPerBar);
 
@@ -484,7 +495,6 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
                     }
                     else
                     {
-                        // Continuation: spacer note (chord symbol already shown)
                         ly += "s" + durTokens[ti].duration;
                     }
                     if (durTokens[ti].tieAfter)
@@ -493,85 +503,105 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
                         ly += " ";
                 }
 
-                chordPos = chord.startBeat + chord.durationBeats;
+                chordPos = chord.startBeat + effectiveDur;
             }
 
             ly += "\n    }\n";
         }
 
-        // Notes
+        // Notes -- build each staff independently
         if (opts.grandStaff)
         {
-            juce::String upperNotes;
-            juce::String lowerNotes;
-            double notePos = 0.0;
+            // First pass: collect events per staff with gap snapping
+            struct StaffEvent { double start; double duration; std::vector<int> notes; };
+            std::vector<StaffEvent> trebleEvents, bassEvents;
 
-            for (const auto& chord : transposed.chords)
+            for (size_t ci = 0; ci < transposed.chords.size(); ++ci)
             {
-                // Rest before this chord
-                double gap = chord.startBeat - notePos;
-                if (gap > 0.1)
-                {
-                    auto gapTokens = decomposeDuration (gap, std::fmod (notePos, beatsPerBar), beatsPerBar);
-                    for (const auto& tok : gapTokens)
-                    {
-                        upperNotes += "r" + tok.duration;
-                        lowerNotes += "r" + tok.duration;
-                        if (tok.tieAfter) { upperNotes += "~ "; lowerNotes += "~ "; }
-                        else { upperNotes += " "; lowerNotes += " "; }
-                    }
-                }
-
-                // Split notes
+                const auto& chord = transposed.chords[ci];
                 std::vector<int> treble, bass;
                 splitTrebleBass (chord.midiNotes, treble, bass);
 
-                auto durTokens = decomposeDuration (chord.durationBeats,
-                                                     std::fmod (chord.startBeat, beatsPerBar),
-                                                     beatsPerBar);
+                double start = chord.startBeat;
+                double dur = chord.durationBeats;
 
-                for (size_t ti = 0; ti < durTokens.size(); ++ti)
+                // Snap small gaps: if gap to next chord < 0.2 beats, extend this chord
+                if (ci + 1 < transposed.chords.size())
                 {
-                    if (ti == 0)
-                    {
-                        upperNotes += midiNotesToLyChord (treble, durTokens[ti].duration);
-                        lowerNotes += midiNotesToLyChord (bass, durTokens[ti].duration);
-                    }
-                    else
-                    {
-                        // Tied continuation
-                        upperNotes += midiNotesToLyChord (treble, durTokens[ti].duration);
-                        lowerNotes += midiNotesToLyChord (bass, durTokens[ti].duration);
-                    }
-                    if (durTokens[ti].tieAfter)
-                    {
-                        upperNotes += "~ ";
-                        lowerNotes += "~ ";
-                    }
-                    else
-                    {
-                        upperNotes += " ";
-                        lowerNotes += " ";
-                    }
+                    double nextStart = transposed.chords[ci + 1].startBeat;
+                    double gap = nextStart - (start + dur);
+                    if (gap > 0.0 && gap < 0.2)
+                        dur += gap;
                 }
 
-                notePos = chord.startBeat + chord.durationBeats;
+                if (! treble.empty())
+                    trebleEvents.push_back ({ start, dur, treble });
+                if (! bass.empty())
+                    bassEvents.push_back ({ start, dur, bass });
             }
 
-            // Trailing rest to fill final bar
+            // Helper lambda: generate notes for one staff from its events
             double totalBars = std::ceil (transposed.totalBeats / beatsPerBar);
             double endBeat = totalBars * beatsPerBar;
-            if (endBeat - notePos > 0.1)
+
+            auto generateStaff = [&] (const std::vector<StaffEvent>& events) -> juce::String
             {
-                auto gapTokens = decomposeDuration (endBeat - notePos, std::fmod (notePos, beatsPerBar), beatsPerBar);
-                for (const auto& tok : gapTokens)
+                juce::String out;
+                double pos = 0.0;
+
+                if (events.empty())
                 {
-                    upperNotes += "r" + tok.duration;
-                    lowerNotes += "r" + tok.duration;
-                    if (tok.tieAfter) { upperNotes += "~ "; lowerNotes += "~ "; }
-                    else { upperNotes += " "; lowerNotes += " "; }
+                    // Entire staff is empty -- fill with whole-bar rests
+                    for (int bar = 0; bar < static_cast<int> (totalBars); ++bar)
+                        out += "R1 ";
+                    return out;
                 }
-            }
+
+                for (const auto& ev : events)
+                {
+                    // Rest before this event
+                    double gap = ev.start - pos;
+                    if (gap > 0.1)
+                    {
+                        auto gapTokens = decomposeDuration (gap, std::fmod (pos, beatsPerBar), beatsPerBar);
+                        for (const auto& tok : gapTokens)
+                        {
+                            out += "r" + tok.duration;
+                            if (tok.tieAfter) out += "~ ";
+                            else out += " ";
+                        }
+                    }
+
+                    auto durTokens = decomposeDuration (ev.duration,
+                                                         std::fmod (ev.start, beatsPerBar),
+                                                         beatsPerBar);
+                    for (size_t ti = 0; ti < durTokens.size(); ++ti)
+                    {
+                        out += midiNotesToLyChord (ev.notes, durTokens[ti].duration);
+                        if (durTokens[ti].tieAfter) out += "~ ";
+                        else out += " ";
+                    }
+
+                    pos = ev.start + ev.duration;
+                }
+
+                // Trailing rest
+                if (endBeat - pos > 0.1)
+                {
+                    auto gapTokens = decomposeDuration (endBeat - pos, std::fmod (pos, beatsPerBar), beatsPerBar);
+                    for (const auto& tok : gapTokens)
+                    {
+                        out += "r" + tok.duration;
+                        if (tok.tieAfter) out += "~ ";
+                        else out += " ";
+                    }
+                }
+
+                return out;
+            };
+
+            juce::String upperNotes = generateStaff (trebleEvents);
+            juce::String lowerNotes = generateStaff (bassEvents);
 
             ly += "    \\new PianoStaff <<\n";
 
@@ -591,14 +621,16 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
         }
         else
         {
-            // Single staff (all notes together)
+            // Single staff (all notes together) with gap snapping
             juce::String notes;
             double notePos = 0.0;
 
-            for (const auto& chord : transposed.chords)
+            for (size_t ci = 0; ci < transposed.chords.size(); ++ci)
             {
+                const auto& chord = transposed.chords[ci];
+
                 double gap = chord.startBeat - notePos;
-                if (gap > 0.1)
+                if (gap > 0.2)
                 {
                     auto gapTokens = decomposeDuration (gap, std::fmod (notePos, beatsPerBar), beatsPerBar);
                     for (const auto& tok : gapTokens)
@@ -609,21 +641,27 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
                     }
                 }
 
-                auto durTokens = decomposeDuration (chord.durationBeats,
+                double effectiveDur = chord.durationBeats;
+                if (ci + 1 < transposed.chords.size())
+                {
+                    double nextStart = transposed.chords[ci + 1].startBeat;
+                    double microGap = nextStart - (chord.startBeat + effectiveDur);
+                    if (microGap > 0.0 && microGap < 0.2)
+                        effectiveDur += microGap;
+                }
+
+                auto durTokens = decomposeDuration (effectiveDur,
                                                      std::fmod (chord.startBeat, beatsPerBar),
                                                      beatsPerBar);
 
                 for (size_t ti = 0; ti < durTokens.size(); ++ti)
                 {
-                    if (ti == 0)
-                        notes += midiNotesToLyChord (chord.midiNotes, durTokens[ti].duration);
-                    else
-                        notes += midiNotesToLyChord (chord.midiNotes, durTokens[ti].duration);
+                    notes += midiNotesToLyChord (chord.midiNotes, durTokens[ti].duration);
                     if (durTokens[ti].tieAfter) notes += "~ ";
                     else notes += " ";
                 }
 
-                notePos = chord.startBeat + chord.durationBeats;
+                notePos = chord.startBeat + effectiveDur;
             }
 
             ly += "    \\new Staff \\absolute {\n";
