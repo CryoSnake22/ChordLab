@@ -134,7 +134,7 @@ private:
     juce::ComboBox inversionCombo;
     juce::ComboBox dropCombo;
     int currentInversion = 0;  // 0 = root position
-    int currentDrop = 0;       // 0 = none, 2 = drop-2, 3 = drop-3, etc.
+    std::vector<int> currentDrop;  // empty = none, {2} = drop-2, {2,4} = drop 2+4, etc.
     juce::String lastInvDropVoicingId;
     void updateInversionDropCombos (const Voicing* voicing);
     void onInversionDropChanged();

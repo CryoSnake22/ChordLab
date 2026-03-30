@@ -517,7 +517,7 @@ void PracticePanel::setSelectedVoicingId (const juce::String& id)
         if (voicingChanged || numNotes != prevNumNotes)
         {
             currentInversion = 0;
-            currentDrop = 0;
+            currentDrop.clear();
             updateInversionDropCombos (v);
         }
     }
@@ -559,7 +559,7 @@ void PracticePanel::setSelectedProgressionId (const juce::String& id)
 
     // Clear inversion/drop for non-voicing practice
     currentInversion = 0;
-    currentDrop = 0;
+    currentDrop.clear();
     updateInversionDropCombos (nullptr);
 
     // Disable Follow/Scale for non-voicing practice; fall back if selected
@@ -593,7 +593,7 @@ void PracticePanel::setSelectedMelodyId (const juce::String& id)
 
     // Clear inversion/drop for non-voicing practice
     currentInversion = 0;
-    currentDrop = 0;
+    currentDrop.clear();
     updateInversionDropCombos (nullptr);
 
     // Disable Follow/Scale for non-voicing practice; fall back if selected
@@ -881,38 +881,30 @@ void PracticePanel::updateInversionDropCombos (const Voicing* voicing)
     if (voicing == nullptr || voicing->intervals.size() < 2)
     {
         currentInversion = 0;
-        currentDrop = 0;
+        currentDrop.clear();
         resized();
         return;
     }
 
     int numNotes = static_cast<int> (voicing->intervals.size());
 
-    // Disable inversions if voicing spans more than one octave
-    bool spansOctave = (voicing->intervals.back() - voicing->intervals.front()) >= 12;
-
-    if (spansOctave)
+    // Inversion: Root, 1st, 2nd, ..., (N-1)th
+    inversionCombo.addItem ("Root", 1);
+    static const char* ordinals[] = { "", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th" };
+    for (int i = 1; i < numNotes; ++i)
     {
-        inversionCombo.addItem ("Root", 1);
-        currentInversion = 0;
-    }
-    else
-    {
-        inversionCombo.addItem ("Root", 1);
-        static const char* ordinals[] = { "", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th" };
-        for (int i = 1; i < numNotes; ++i)
-        {
-            juce::String label = (i < 8) ? juce::String (ordinals[i]) : juce::String (i) + "th";
-            inversionCombo.addItem (label, i + 1);
-        }
+        juce::String label = (i < 8) ? juce::String (ordinals[i]) : juce::String (i) + "th";
+        inversionCombo.addItem (label, i + 1);
     }
     inversionCombo.setSelectedId (currentInversion + 1, juce::dontSendNotification);
 
-    // Drop: None, Drop 2, Drop 3, ..., Drop (N-1)
+    // Drop: None, Drop 2, Drop 3, ..., Drop (N-1), Drop 2+4
     dropCombo.addItem ("No Drop", 1);
     for (int d = 2; d < numNotes; ++d)
         dropCombo.addItem ("Drop " + juce::String (d), d);
-    dropCombo.setSelectedId (currentDrop < 2 ? 1 : currentDrop, juce::dontSendNotification);
+    if (numNotes >= 5)
+        dropCombo.addItem ("Drop 2+4", 100);
+    dropCombo.setSelectedId (currentDrop.empty() ? 1 : dropCombo.getSelectedId(), juce::dontSendNotification);
 
     resized();
 }
@@ -922,7 +914,7 @@ std::vector<int> PracticePanel::applyCurrentTransforms (const std::vector<int>& 
     auto result = notes;
     if (currentInversion > 0)
         result = VoicingLibrary::applyInversion (result, currentInversion);
-    if (currentDrop >= 2)
+    if (! currentDrop.empty())
         result = VoicingLibrary::applyDrop (result, currentDrop);
     return result;
 }
@@ -930,7 +922,13 @@ std::vector<int> PracticePanel::applyCurrentTransforms (const std::vector<int>& 
 void PracticePanel::onInversionDropChanged()
 {
     currentInversion = juce::jmax (0, inversionCombo.getSelectedId() - 1);
-    currentDrop = dropCombo.getSelectedId() < 2 ? 0 : dropCombo.getSelectedId();
+
+    int dropId = dropCombo.getSelectedId();
+    currentDrop.clear();
+    if (dropId == 100)
+        currentDrop = { 2, 4 };
+    else if (dropId >= 2)
+        currentDrop = { dropId };
 
     // Get the current voicing
     const auto& voicingId = practicingVoicingId.isNotEmpty() ? practicingVoicingId : selectedVoicingId;
@@ -950,30 +948,34 @@ void PracticePanel::onInversionDropChanged()
         notes = VoicingLibrary::transposeToKey (*voicing, voicing->octaveReference);
         if (currentInversion > 0)
             notes = VoicingLibrary::applyInversion (notes, currentInversion);
-        if (currentDrop >= 2)
+        if (! currentDrop.empty())
             notes = VoicingLibrary::applyDrop (notes, currentDrop);
     }
 
     // Build note+velocity pairs, preserving velocity through transforms
-    std::vector<std::pair<int, float>> noteVels;
+    // Build velocity map from original notes, then transform notes and look up velocities
+    auto baseNotes = VoicingLibrary::transposeToKey (*voicing, voicing->octaveReference);
+    std::map<int, float> velMap;
+    for (size_t i = 0; i < baseNotes.size(); ++i)
     {
-        auto baseNotes = VoicingLibrary::transposeToKey (*voicing, voicing->octaveReference);
-        for (size_t i = 0; i < baseNotes.size(); ++i)
-        {
-            float vel = (i < voicing->velocities.size() && voicing->velocities[i] > 0)
-                ? static_cast<float> (voicing->velocities[i]) / 127.0f : 0.7f;
-            noteVels.push_back ({ baseNotes[i], vel });
-        }
-        // Apply inversion: move lowest N notes up an octave
-        std::sort (noteVels.begin(), noteVels.end());
-        for (int i = 0; i < currentInversion && i < static_cast<int> (noteVels.size()); ++i)
-            noteVels[static_cast<size_t> (i)].first += 12;
-        std::sort (noteVels.begin(), noteVels.end());
-        // Apply drop: Nth from top down an octave
-        if (currentDrop >= 2 && currentDrop < static_cast<int> (noteVels.size()))
-            noteVels[noteVels.size() - static_cast<size_t> (currentDrop)].first -= 12;
-        std::sort (noteVels.begin(), noteVels.end());
+        float vel = (i < voicing->velocities.size() && voicing->velocities[i] > 0)
+            ? static_cast<float> (voicing->velocities[i]) / 127.0f : 0.7f;
+        velMap[baseNotes[i]] = vel;
     }
+
+    // Apply transforms using the smart inversion/drop logic
+    auto transformedNotes = notes;
+    std::vector<std::pair<int, float>> noteVels;
+    for (int n : transformedNotes)
+    {
+        // Find velocity by pitch class match from original
+        float vel = 0.7f;
+        int pc = n % 12;
+        for (const auto& [origNote, origVel] : velMap)
+            if (origNote % 12 == pc) { vel = origVel; break; }
+        noteVels.push_back ({ n, vel });
+    }
+    std::sort (noteVels.begin(), noteVels.end());
 
     // Play preview with original velocities
     int ch = static_cast<int> (*processorRef.apvts.getRawParameterValue ("midiChannel"));
@@ -1143,20 +1145,25 @@ void PracticePanel::showVoicingChartPreview (const juce::String& voicingId)
     if (showingKeySelector && (orderId == 3 || orderId == 4))
         return;
 
-    // Build note+velocity pairs, then apply inversion/drop together
+    // Transform notes using smart inversion/drop, then match velocities by pitch class
     auto baseNotes = VoicingLibrary::transposeToKey (*v, v->octaveReference);
-    std::vector<std::pair<int, int>> noteVels;
+    auto transformedNotes = applyCurrentTransforms (baseNotes);
+
+    std::map<int, int> velMap;
     for (size_t i = 0; i < baseNotes.size(); ++i)
     {
         int vel = (i < v->velocities.size() && v->velocities[i] > 0) ? v->velocities[i] : 100;
-        noteVels.push_back ({ baseNotes[i], vel });
+        velMap[baseNotes[i] % 12] = vel;
     }
-    std::sort (noteVels.begin(), noteVels.end());
-    for (int i = 0; i < currentInversion && i < static_cast<int> (noteVels.size()); ++i)
-        noteVels[static_cast<size_t> (i)].first += 12;
-    std::sort (noteVels.begin(), noteVels.end());
-    if (currentDrop >= 2 && currentDrop < static_cast<int> (noteVels.size()))
-        noteVels[noteVels.size() - static_cast<size_t> (currentDrop)].first -= 12;
+
+    std::vector<std::pair<int, int>> noteVels;
+    for (int n : transformedNotes)
+    {
+        int vel = 100;
+        auto it = velMap.find (n % 12);
+        if (it != velMap.end()) vel = it->second;
+        noteVels.push_back ({ n, vel });
+    }
     std::sort (noteVels.begin(), noteVels.end());
 
     Progression prog;
@@ -3073,7 +3080,7 @@ std::vector<int> PracticePanel::computeTargetNotes (const Voicing& v,
 
     if (currentInversion > 0)
         notes = VoicingLibrary::applyInversion (notes, currentInversion);
-    if (currentDrop >= 2)
+    if (! currentDrop.empty())
         notes = VoicingLibrary::applyDrop (notes, currentDrop);
 
     return notes;

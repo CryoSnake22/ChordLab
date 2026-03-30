@@ -77,6 +77,20 @@ std::vector<int> VoicingLibrary::transposeToKey (const Voicing& v,
     return notes;
 }
 
+// First occurrence of pitchClass strictly above 'above'
+static int firstPcAbove (int pitchClass, int above)
+{
+    int target = above + 1 + ((pitchClass - (above + 1) % 12 + 120) % 12);
+    return juce::jlimit (0, 127, target);
+}
+
+// First occurrence of pitchClass strictly below 'below'
+static int firstPcBelow (int pitchClass, int below)
+{
+    int target = below - 1 - (((below - 1) % 12 - pitchClass + 12) % 12);
+    return juce::jlimit (0, 127, target);
+}
+
 std::vector<int> VoicingLibrary::applyInversion (const std::vector<int>& notes, int inversion)
 {
     if (notes.empty() || inversion <= 0 || inversion >= static_cast<int> (notes.size()))
@@ -84,23 +98,42 @@ std::vector<int> VoicingLibrary::applyInversion (const std::vector<int>& notes, 
 
     auto result = notes;
     std::sort (result.begin(), result.end());
+
+    // Iteratively move the bottom note above the current highest
     for (int i = 0; i < inversion; ++i)
-        result[static_cast<size_t> (i)] += 12;
-    std::sort (result.begin(), result.end());
+    {
+        int bottomNote = result.front();
+        int highest = result.back();
+        int pc = bottomNote % 12;
+        result.front() = firstPcAbove (pc, highest);
+        std::sort (result.begin(), result.end());
+    }
     return result;
 }
 
-std::vector<int> VoicingLibrary::applyDrop (const std::vector<int>& notes, int dropN)
+std::vector<int> VoicingLibrary::applyDrop (const std::vector<int>& notes, const std::vector<int>& drops)
 {
     int n = static_cast<int> (notes.size());
-    if (n < 3 || dropN < 2 || dropN >= n)
+    if (n < 3 || drops.empty())
         return notes;
 
     auto result = notes;
     std::sort (result.begin(), result.end());
-    // Nth voice from top: index = size - dropN
-    result[static_cast<size_t> (n - dropN)] -= 12;
-    std::sort (result.begin(), result.end());
+
+    // Process drops from highest position number first (lowest index in sorted array)
+    // so that dropping one voice doesn't shift the indices of the others
+    auto sortedDrops = drops;
+    std::sort (sortedDrops.rbegin(), sortedDrops.rend());
+
+    for (int dropN : sortedDrops)
+    {
+        if (dropN < 2 || dropN >= n) continue;
+        size_t idx = static_cast<size_t> (n - dropN);
+        int pc = result[idx] % 12;
+        int lowest = result.front();
+        result[idx] = firstPcBelow (pc, lowest);
+        std::sort (result.begin(), result.end());
+    }
     return result;
 }
 

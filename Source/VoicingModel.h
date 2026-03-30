@@ -54,8 +54,8 @@ public:
     // Apply inversion: move the N lowest notes up an octave (result sorted)
     static std::vector<int> applyInversion (const std::vector<int>& notes, int inversion);
 
-    // Apply drop: Nth voice from top goes down an octave (result sorted)
-    static std::vector<int> applyDrop (const std::vector<int>& notes, int dropN);
+    // Apply drop: specified voices from top go below the voicing (result sorted)
+    static std::vector<int> applyDrop (const std::vector<int>& notes, const std::vector<int>& drops);
 
     // Match played MIDI notes against the library by interval pattern.
     // Returns the matching voicing and the detected root note name, or nullptr if no match.
