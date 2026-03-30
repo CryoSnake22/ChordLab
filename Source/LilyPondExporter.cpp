@@ -503,6 +503,7 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
 
     int beatsPerBar = prog.timeSignatureNum;
     int timeSigDen = prog.timeSignatureDen;
+    int keysPerLine = 1;  // set later based on barsPerKey; lambdas capture by ref
 
     // Helper: generate chord symbols for one key's chords
     auto generateChordSymbols = [&] (const std::vector<ProgressionChord>& chords) -> juce::String
@@ -569,9 +570,11 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
             }
 
             // Render grace notes (acciaccatura) before the main chord.
-            // Grace notes render correctly inside polyphonic voices when LilyPond
-            // handles line breaks automatically (no forced \break at barlines).
-            if (! ev.graceNotes.empty())
+            // Skip beat-0 grace notes when 1 key per line (keysPerLine==1):
+            // they appear at system boundaries and get pushed to the previous system.
+            // Mid-bar grace notes (beat 4+) render correctly inside voices.
+            bool suppressGrace = (keysPerLine == 1 && ev.start < 0.2);
+            if (! ev.graceNotes.empty() && ! suppressGrace)
             {
                 out += "\\acciaccatura { ";
                 for (int gn : ev.graceNotes)
@@ -738,8 +741,12 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
     double actualEnd = 0.0;
     for (const auto& c : sampleChords)
         actualEnd = std::max (actualEnd, c.startBeat + c.durationBeats);
+    int barsPerKey = std::max (1, static_cast<int> (std::ceil (actualEnd / beatsPerBar)));
+    // Keys per line: 1-bar keys get 4 per line, multi-bar keys get 1 per line
+    keysPerLine = (barsPerKey <= 1) ? 4 : 1;
+
     // Build all keys' content into parallel string streams
-    // (LilyPond auto-breaks at double barlines for optimal layout)
+    // (LilyPond auto-breaks; system-count in \paper controls lines-per-page)
     juce::String allChordSymbols;
     juce::String allUpper;
     juce::String allLower;
@@ -952,6 +959,17 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
         // (grace notes get pushed to a separate empty system).
     }
 
+    // For multi-bar progressions, constrain line-width so LilyPond's auto-breaker
+    // puts 1 key per line. This avoids forced \break which conflicts with grace notes.
+    // ~52mm per bar keeps each key on its own line on letter paper.
+    // ragged-right keeps content left-aligned instead of centered.
+    if (barsPerKey > 1)
+    {
+        int lineWidthMm = barsPerKey * 52;
+        if (lineWidthMm < 160)  // only constrain if narrower than default
+            ly += "\\paper { line-width = " + juce::String (lineWidthMm) + "\\mm ragged-right = ##t }\n\n";
+    }
+
     // Build single score
     ly += "\\score {\n  <<\n";
 
@@ -968,7 +986,7 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
         ly += "    \\new PianoStaff <<\n";
         ly += "      \\new Staff = \"upper\" \\absolute {\n";
         ly += "        \\clef treble \\key c \\major\n";
-        ly += "        \\numericTimeSignature \\time "
+        ly += "        \\override Staff.TimeSignature.style = #'numbered \\time "
             + juce::String (beatsPerBar) + "/" + juce::String (timeSigDen) + "\n";
         ly += "        " + allUpper + "\n";
         ly += "      }\n";
@@ -995,6 +1013,10 @@ juce::String generateProgressionLy (const Progression& prog, const ExportOptions
     ly += "      \\Score\n";
     ly += "      \\override RehearsalMark.self-alignment-X = #LEFT\n";
     ly += "      \\override RehearsalMark.font-size = #1\n";
+    ly += "    }\n";
+    ly += "    \\context {\n";
+    ly += "      \\Voice\n";
+    ly += "      \\omit TimeSignature\n";
     ly += "    }\n";
     ly += "  }\n";
     ly += "}\n";
