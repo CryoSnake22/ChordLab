@@ -2,6 +2,7 @@
 #include "PluginProcessor.h"
 #include "ChordDetector.h"
 #include "ChordyTheme.h"
+#include "ExportSheetMusicDialog.h"
 
 static void addQualityItems (juce::ComboBox& combo)
 {
@@ -786,6 +787,8 @@ void VoicingLibraryPanel::showMoreMenu()
     menu.addItem (21, "Export Selected (.chordy)...", getSelectionCount() > 0);
     menu.addItem (22, "Export All Voicings (.chordy)...");
     menu.addSeparator();
+    menu.addItem (30, "Export Sheet Music (PDF)...", getSelectionCount() == 1);
+    menu.addSeparator();
     menu.addItem (1, "New Folder...");
 
     int folderId = folderCombo.getSelectedId();
@@ -924,6 +927,52 @@ void VoicingLibraryPanel::showMoreMenu()
                             processorRef.progressionLibrary,
                             processorRef.melodyLibrary, f);
                     });
+                });
+            }
+            else if (result == 30) // Export Sheet Music (PDF)
+            {
+                auto selectedId = getSelectedVoicingId();
+                if (selectedId.isEmpty()) return;
+                const auto* v = processorRef.voicingLibrary.getVoicing (selectedId);
+                if (v == nullptr) return;
+                auto voicingCopy = *v;
+
+                juce::MessageManager::callAsync ([this, voicingCopy] {
+                    ExportSheetMusicDialog::show (
+                        ExportSheetMusicDialog::ContentType::Voicing,
+                        voicingCopy.name,
+                        voicingCopy.rootPitchClass,
+                        [this, voicingCopy] (LilyPondExporter::ExportOptions opts)
+                        {
+                            auto lyContent = LilyPondExporter::generateVoicingLy (voicingCopy, opts);
+                            auto defaultName = opts.title.isNotEmpty() ? opts.title : voicingCopy.name;
+
+                            juce::MessageManager::callAsync ([this, lyContent, defaultName] {
+                                fileChooser = std::make_unique<juce::FileChooser> (
+                                    "Save Sheet Music PDF...",
+                                    juce::File::getSpecialLocation (juce::File::userDocumentsDirectory)
+                                        .getChildFile (defaultName + ".pdf"),
+                                    "*.pdf");
+                                auto flags = juce::FileBrowserComponent::saveMode
+                                           | juce::FileBrowserComponent::warnAboutOverwriting;
+                                fileChooser->launchAsync (flags, [lyContent] (const juce::FileChooser& fc)
+                                {
+                                    auto f = fc.getResult();
+                                    if (f == juce::File()) return;
+                                    auto exportResult = LilyPondExporter::renderToPdf (lyContent, f);
+                                    if (exportResult.success)
+                                        juce::AlertWindow::showMessageBoxAsync (
+                                            juce::MessageBoxIconType::InfoIcon,
+                                            "Export Complete",
+                                            "Sheet music saved to:\n" + f.getFullPathName());
+                                    else
+                                        juce::AlertWindow::showMessageBoxAsync (
+                                            juce::MessageBoxIconType::WarningIcon,
+                                            "Export Failed",
+                                            exportResult.errorMessage);
+                                });
+                            });
+                        });
                 });
             }
             else if (result == 1)
