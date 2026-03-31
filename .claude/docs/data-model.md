@@ -4,7 +4,7 @@
 
 **Folder**: `id` (UUID), `name`, `sortOrder`
 
-**Voicing**: `id`, `name`, `quality`, `alterations`, `rootPitchClass`, `intervals`, `velocities` (parallel to intervals), `octaveReference`, `folderId`, `createdAt`
+**Voicing**: `id`, `name`, `quality`, `alterations`, `rootPitchClass`, `intervals`, `velocities` (parallel to intervals), `octaveReference`, `folderId`, `createdAt`. `rootPitchClass` defaults to lowest note played; users override manually for rootless voicings. `VoicingLibrary::applyInversion(notes, n)` / `applyDrop(notes, drops)` transform note arrays for practice.
 
 **ProgressionChord**: `intervals`, `rootPitchClass` (0-11), `quality`, `alterations`, `name`, `linkedVoicingId`, `startBeat`, `durationBeats`, `midiNotes`, `midiVelocities`, `noteStartBeats` (per-note), `noteDurations` (per-note). `getDisplayName()` generates from root+quality+alterations, includes slash bass if lowest != root.
 

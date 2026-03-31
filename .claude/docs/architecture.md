@@ -15,19 +15,19 @@
 | `ChordDetector.h/.cpp` | Pitch-class template matching (triads through 13ths). Bass note +30 root bonus. |
 | `ChordyKeyboardComponent.h/.cpp` | MidiKeyboardComponent subclass with colored key overlays (green/red/teal). |
 | `FolderModel.h/.cpp` | Folder struct + FolderLibrary with ValueTree serialization. |
-| `VoicingModel.h/.cpp` | Voicing struct + VoicingLibrary. findByNotes(), createFromNotes(). |
+| `VoicingModel.h/.cpp` | Voicing struct + VoicingLibrary. findByNotes(), createFromNotes(), applyInversion(), applyDrop(). |
 | `ProgressionModel.h/.cpp` | ProgressionChord (per-note timing) + Progression struct + ProgressionLibrary. |
 | `ProgressionRecorder.h/.cpp` | MIDI recording with beat-relative timestamps. Two-phase analysis pipeline. |
 | `MelodyModel.h/.cpp` | MelodyNote + MelodyChordContext + Melody struct + MelodyLibrary. |
 | `SpacedRepetition.h/.cpp` | SM-2 engine with recency-weighted accuracy. |
-| `ScaleModel.h/.cpp` | Scale definitions, voicingFitsInScale(), diatonicTranspose(). |
+| `ScaleModel.h/.cpp` | Scale definitions (incl. Bebop Major/Dominant), voicingFitsInScale(), diatonicTranspose(). |
 | `VoicingStatsChart.h/.cpp` | 12-bar chart (C-B) showing per-key accuracy. Click-to-play callback. |
 | `VoicingLibraryPanel.h/.cpp` | Voicing management: 4-state flow, multi-select, folders, MIDI/.chordy import/export. |
 | `ProgressionLibraryPanel.h/.cpp` | Progression management: 6-state machine, count-in, quantize, transpose. |
 | `MelodyLibraryPanel.h/.cpp` | Melody management: 5-state machine, chord context editor. |
 | `ProgressionChartComponent.h/.cpp` | Dual-mode chart: detailed (piano-roll) and simple (chord rects). Draggable end marker. |
 | `MelodyChartComponent.h/.cpp` | Note-on-beat-grid renderer. Row wrapping, note states, draggable end marker. |
-| `PracticePanel.h/.cpp` | Practice GUI for voicing/progression/melody. 4 order modes, scoring, chart preview. |
+| `PracticePanel.h/.cpp` | Practice GUI for voicing/progression/melody. 5 order modes (incl. Free), inversion/drop transforms, scoring, chart preview. |
 | `MidiFileUtils.h/.cpp` | MIDI file import/export (480 TPQ, beat-relative timestamps). |
 | `LibraryExporter.h/.cpp` | .chordy XML collection format for sharing libraries. |
 | `LilyPondExporter.h/.cpp` | LilyPond .ly generation + PDF rendering. See `.claude/docs/lilypond-export.md`. |
@@ -43,14 +43,16 @@ processBlock() [AUDIO THREAD]
   |-- Scan isNoteOn() for 128 notes -> atomic bitfield
   |-- If notes active: update lastPlayedNotes (mutex-protected)
   |-- Forward MIDI to ProgressionRecorder if recording (notes + pedal CC64)
+  |-- Merge preview MIDI buffer (SpinLock-protected, from GUI thread)
   |-- Progression playback: replay raw MIDI events at beat positions
   |-- Melody playback: replay raw MIDI events at beat positions
-  |-- Merge preview MIDI buffer (SpinLock-protected, from GUI thread)
   |-- If synthEnabled: ChordySynth.renderNextBlock()
   |-- Else: ExternalInstrument.processBlock()
   |-- Volume slider applied to output
   |-- tempoEngine.process() -> advance clock, render metronome
 ```
+
+**Note**: Preview MIDI merge happens BEFORE playback so that note-offs from `stopProgressionPlayback()` land before new note-ons in the buffer. This ensures clean re-triggering of shared pitches when switching between voicings.
 
 ## Key Architecture Rules
 

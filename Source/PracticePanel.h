@@ -15,7 +15,7 @@
 class AudioPluginAudioProcessor;
 class ChordyKeyboardComponent;
 
-enum class RootOrder { Chromatic, Random, Follow, Scale };
+enum class RootOrder { Chromatic, Random, Follow, Scale, Free };
 enum class PracticeType { Voicing, Progression, Melody };
 
 class PracticePanel : public juce::Component

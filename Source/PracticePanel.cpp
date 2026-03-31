@@ -88,6 +88,7 @@ PracticePanel::PracticePanel (AudioPluginAudioProcessor& processor,
     orderCombo.addItem ("Chromatic", 2);
     orderCombo.addItem ("Follow", 3);
     orderCombo.addItem ("Scale", 4);
+    orderCombo.addItem ("Free", 5);
     orderCombo.setSelectedId (2, juce::dontSendNotification);
     orderCombo.onChange = [this] { updateFollowScaleVisibility(); resized(); repaint(); };
     addChildComponent (orderCombo);
@@ -367,8 +368,9 @@ void PracticePanel::resized()
             area.removeFromBottom (2);
         }
 
-        // Key toggles (hidden for Follow/melody source only)
-        if (! isMelodySource)
+        // Key toggles (hidden for Follow/melody source and Free mode)
+        bool isFree = (orderId == 5);
+        if (! isMelodySource && ! isFree)
         {
             auto keyRow2 = area.removeFromBottom (22);
             int kw = keyRow2.getWidth() / 6;
@@ -379,6 +381,26 @@ void PracticePanel::resized()
             auto keyRow1 = area.removeFromBottom (22);
             for (int i = 0; i < 6; ++i)
                 keyToggles[i].setBounds (keyRow1.removeFromLeft (kw));
+        }
+
+        // Inversion / Drop row (voicing practice only, inside custom)
+        bool showInvDrop = (practiceType == PracticeType::Voicing)
+                        && (inversionCombo.getNumItems() > 0);
+        if (showInvDrop)
+        {
+            area.removeFromBottom (2);
+            auto invDropRow = area.removeFromBottom (24);
+            int halfW = (invDropRow.getWidth() - 4) / 2;
+            inversionCombo.setBounds (invDropRow.removeFromLeft (halfW));
+            invDropRow.removeFromLeft (4);
+            dropCombo.setBounds (invDropRow);
+            inversionCombo.setVisible (true);
+            dropCombo.setVisible (true);
+        }
+        else
+        {
+            inversionCombo.setVisible (false);
+            dropCombo.setVisible (false);
         }
 
         area.removeFromBottom (4);
@@ -401,21 +423,8 @@ void PracticePanel::resized()
     backingToggle.setBounds (toggleRow);
     area.removeFromBottom (4);
 
-    // Inversion / Drop row (voicing practice only)
-    bool showInvDrop = (practiceType == PracticeType::Voicing)
-                    && (inversionCombo.getNumItems() > 0);
-    if (showInvDrop)
-    {
-        auto invDropRow = area.removeFromBottom (24);
-        int halfW = (invDropRow.getWidth() - 4) / 2;
-        inversionCombo.setBounds (invDropRow.removeFromLeft (halfW));
-        invDropRow.removeFromLeft (4);
-        dropCombo.setBounds (invDropRow);
-        inversionCombo.setVisible (true);
-        dropCombo.setVisible (true);
-        area.removeFromBottom (4);
-    }
-    else
+    // Hide inv/drop when not in custom mode
+    if (! showingKeySelector)
     {
         inversionCombo.setVisible (false);
         dropCombo.setVisible (false);
@@ -526,9 +535,10 @@ void PracticePanel::setSelectedVoicingId (const juce::String& id)
     if (orderCombo.getSelectedId() == 4)
         updateScalePickerAvailability();
 
-    // Enable Follow/Scale options for voicing practice
+    // Enable Follow/Scale/Free options for voicing practice
     orderCombo.setItemEnabled (3, true);
     orderCombo.setItemEnabled (4, true);
+    orderCombo.setItemEnabled (5, true);
 
     // Rebuild exercise preview if in Follow/Scale mode
     int orderId = orderCombo.getSelectedId();
@@ -562,9 +572,10 @@ void PracticePanel::setSelectedProgressionId (const juce::String& id)
     currentDrop.clear();
     updateInversionDropCombos (nullptr);
 
-    // Disable Follow/Scale for non-voicing practice; fall back if selected
+    // Disable Follow/Scale/Free for non-voicing practice; fall back if selected
     orderCombo.setItemEnabled (3, false);
     orderCombo.setItemEnabled (4, false);
+    orderCombo.setItemEnabled (5, false);
     if (orderCombo.getSelectedId() > 2)
         orderCombo.setSelectedId (2, juce::dontSendNotification);
 }
@@ -596,9 +607,10 @@ void PracticePanel::setSelectedMelodyId (const juce::String& id)
     currentDrop.clear();
     updateInversionDropCombos (nullptr);
 
-    // Disable Follow/Scale for non-voicing practice; fall back if selected
+    // Disable Follow/Scale/Free for non-voicing practice; fall back if selected
     orderCombo.setItemEnabled (3, false);
     orderCombo.setItemEnabled (4, false);
+    orderCombo.setItemEnabled (5, false);
     if (orderCombo.getSelectedId() > 2)
         orderCombo.setSelectedId (2, juce::dontSendNotification);
 }
@@ -756,6 +768,22 @@ void PracticePanel::startPractice (const juce::String& voicingId)
     // Show which voicing we're practicing
     headerLabel.setText ("Practicing: " + voicing->name, juce::dontSendNotification);
 
+    // Free mode: no target notes, no timed mode
+    if (rootOrder == RootOrder::Free)
+    {
+        targetNotes.clear();
+        targetLabel.setText ("Play in any key", juce::dontSendNotification);
+        feedbackLabel.setText ("", juce::dontSendNotification);
+        currentRootText = {};
+        nextRootText = {};
+        nextButton.setEnabled (false);
+        keyboardRef.clearAllColours();
+        keyboardRef.repaint();
+        resized();
+        repaint();
+        return;
+    }
+
     targetNotes = computeTargetNotes (*voicing, currentChallenge);
 
     bool timedMode = timedToggle.getToggleState();
@@ -888,12 +916,13 @@ void PracticePanel::updateInversionDropCombos (const Voicing* voicing)
 
     int numNotes = static_cast<int> (voicing->intervals.size());
 
-    // Inversion: Root, 1st, 2nd, ..., (N-1)th
-    inversionCombo.addItem ("Root", 1);
+    // Inversion: Root Position, 1st Inversion, 2nd Inversion, ...
+    inversionCombo.addItem ("Root Position", 1);
     static const char* ordinals[] = { "", "1st", "2nd", "3rd", "4th", "5th", "6th", "7th" };
     for (int i = 1; i < numNotes; ++i)
     {
-        juce::String label = (i < 8) ? juce::String (ordinals[i]) : juce::String (i) + "th";
+        juce::String label = ((i < 8) ? juce::String (ordinals[i]) : juce::String (i) + "th")
+                             + " Inversion";
         inversionCombo.addItem (label, i + 1);
     }
     inversionCombo.setSelectedId (currentInversion + 1, juce::dontSendNotification);
@@ -1245,7 +1274,7 @@ void PracticePanel::updatePractice (const std::vector<int>& activeNotes)
         return;
     }
 
-    if (targetNotes.empty())
+    if (targetNotes.empty() && rootOrder != RootOrder::Free)
         return;
 
     if (practiceType == PracticeType::Progression)
@@ -1264,6 +1293,63 @@ void PracticePanel::updatePractice (const std::vector<int>& activeNotes)
 
 void PracticePanel::updateUntimedPractice (const std::vector<int>& activeNotes)
 {
+    // --- Free mode: match against any transposition, no scoring/advance ---
+    if (rootOrder == RootOrder::Free)
+    {
+        if (activeNotes.empty())
+        {
+            keyboardRef.clearAllColours();
+            keyboardRef.repaint();
+            feedbackLabel.setText ("", juce::dontSendNotification);
+            currentRootText = {};
+            return;
+        }
+
+        // Get the voicing's interval pattern
+        const auto& vid = practicingVoicingId.isNotEmpty() ? practicingVoicingId : selectedVoicingId;
+        const auto* voicing = processorRef.voicingLibrary.getVoicing (vid);
+        if (voicing == nullptr) return;
+
+        std::set<int> playedPCs;
+        for (int n : activeNotes)
+            playedPCs.insert (n % 12);
+
+        // Build interval-based pitch class set and check all 12 transpositions
+        int matchedRoot = -1;
+        for (int root = 0; root < 12; ++root)
+        {
+            std::set<int> expected;
+            for (int interval : voicing->intervals)
+                expected.insert ((root + interval) % 12);
+            if (playedPCs == expected)
+            {
+                matchedRoot = root;
+                break;
+            }
+        }
+
+        keyboardRef.clearAllColours();
+        if (matchedRoot >= 0)
+        {
+            for (int n : activeNotes)
+                keyboardRef.setKeyColour (n, KeyColour::Correct);
+            juce::String rootName = ChordDetector::noteNameFromPitchClass (matchedRoot);
+            currentRootText = rootName;
+            currentRootColour = juce::Colour (ChordyTheme::successBright);
+            feedbackLabel.setText ("Correct! Key: " + rootName, juce::dontSendNotification);
+            feedbackLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::success));
+        }
+        else
+        {
+            for (int n : activeNotes)
+                keyboardRef.setKeyColour (n, KeyColour::Wrong);
+            currentRootText = {};
+            feedbackLabel.setText ("", juce::dontSendNotification);
+        }
+        keyboardRef.repaint();
+        return;
+    }
+
     // Auto-advance after success — wait for note release then advance
     if (challengeCompleted)
     {
@@ -1825,8 +1911,10 @@ void PracticePanel::updateFollowScaleVisibility()
     bool isScale = (orderId == 4);
     bool isMelodySource = isFollow && followSourceCombo.getSelectedId() == 2;
 
-    // Key toggles visible for all modes EXCEPT Follow(melody)
-    bool showKeyToggles = showingKeySelector && ! isMelodySource;
+    bool isFree = (orderId == 5);
+
+    // Key toggles visible for all modes EXCEPT Follow(melody) and Free
+    bool showKeyToggles = showingKeySelector && ! isMelodySource && ! isFree;
     for (int i = 0; i < 12; ++i)
         keyToggles[i].setVisible (showKeyToggles);
     selectAllButton.setVisible (showKeyToggles);
@@ -1839,9 +1927,10 @@ void PracticePanel::updateFollowScaleVisibility()
     followSourceCombo.setVisible (showingKeySelector && isFollow);
     melodyPickerCombo.setVisible (showingKeySelector && isMelodySource);
 
-    // Disable Follow/Scale for non-voicing practice
+    // Disable Follow/Scale/Free for non-voicing practice
     orderCombo.setItemEnabled (3, practiceType == PracticeType::Voicing);
     orderCombo.setItemEnabled (4, practiceType == PracticeType::Voicing);
+    orderCombo.setItemEnabled (5, practiceType == PracticeType::Voicing);
 
     // Scale mode: grey out incompatible scales. Follow mode: all scales allowed.
     if (isScale)
@@ -1894,6 +1983,16 @@ void PracticePanel::buildCustomKeySequence()
                                       descending.begin(), descending.end());
         }
     };
+
+    // --- Free mode ---
+    if (orderId == 5)
+    {
+        rootOrder = RootOrder::Free;
+        customKeySequence.clear();
+        scaleInnerSequence.clear();
+        customKeyIndex = 0;
+        return;
+    }
 
     // --- Follow mode ---
     if (orderId == 3)
@@ -1992,8 +2091,17 @@ void PracticePanel::buildCustomKeySequence()
 
 PracticeChallenge PracticePanel::getNextCustomChallenge()
 {
-    if (customKeySequence.empty())
+    if (customKeySequence.empty() && rootOrder != RootOrder::Free)
         buildCustomKeySequence();
+
+    // --- Free mode: no specific key challenge ---
+    if (rootOrder == RootOrder::Free)
+    {
+        PracticeChallenge challenge;
+        challenge.keyIndex = -1;
+        challenge.rootMidiNote = -1;
+        return challenge;
+    }
 
     // --- Two-level loop for Follow(scale) / Scale ---
     if (! scaleInnerSequence.empty())

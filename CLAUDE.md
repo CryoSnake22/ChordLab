@@ -10,6 +10,7 @@ make run      # build + open Standalone app
 ```
 
 Build a specific format:
+
 ```bash
 cmake --build cmake-build --target Chordy_VST3
 cmake --build cmake-build --target Chordy_AU
@@ -42,7 +43,7 @@ All source in `Source/`. New `.cpp`/`.h` files **must** be added to `SOURCE_FILE
 - **Per-note independent scoring**, never chord-level. See `.claude/docs/recording-and-practice.md`.
 - **Avoid UTF-8 special characters** in displayed strings -- JUCE font rendering may not handle them.
 - No test infrastructure yet.
-- Planned: comping rhythm templates.
+- Planned: comping rhythm templates, chord interleaving practice mode.
 
 ## Detailed Context
 

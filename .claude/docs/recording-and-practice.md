@@ -20,8 +20,20 @@ Per-note velocities tracked via `noteVelocities[128]` atomic array in processor.
 - **Random**: Random key selection.
 - **Follow** (voicing only): Root walks along a chosen scale or melody's pitch classes. Pure transposition.
 - **Scale/Diatonic** (voicing only): Each note moves independently by scale degrees via `diatonicTranspose()`. Only available when `voicingFitsInScale()` returns true.
+- **Free** (voicing only): No target key -- user plays the voicing in any key. Matches played pitch classes against the voicing's interval pattern in all 12 transpositions. Green feedback on match with detected key name, red on wrong notes. No scoring, no auto-advance.
 
-Follow and Scale are disabled for progression/melody practice.
+Follow, Scale, and Free are disabled for progression/melody practice.
+
+### Inversion & Drop (voicing practice, Custom mode only)
+
+Visible under Custom mode in the key selector area. Two combo boxes:
+
+- **Inversion**: Root Position, 1st Inversion, 2nd Inversion, ..., (N-1)th. Moves the bottom note to the first occurrence of its pitch class above the current highest note (not just +12). Iterative -- each inversion step operates on the result of the previous.
+- **Drop**: No Drop, Drop 2, Drop 3, ..., Drop 2+4. Moves the Nth voice from the top to the first occurrence of its pitch class below the current lowest note (standard jazz drop voicing counting from top). Drop 2+4 drops both 2nd and 4th voices simultaneously (requires 5+ notes).
+
+Transform pipeline: transpose to key -> apply inversion -> apply drop. Both transforms and the resulting notes are used consistently for practice targets, previews, chart display, and Play/spacebar playback. Velocities are preserved through transforms by pitch-class matching.
+
+Inversion/drop settings persist when the same voicing is re-selected, reset when switching to a different voicing. `createFromNotes()` defaults root to lowest note played (users override manually for rootless voicings).
 
 ### Scoring Rules
 
