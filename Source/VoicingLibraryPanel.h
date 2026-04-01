@@ -3,6 +3,7 @@
 #include <juce_gui_basics/juce_gui_basics.h>
 #include "VoicingModel.h"
 #include "VoicingStatsChart.h"
+#include "AccuracyTimeChart.h"
 #include "MidiFileUtils.h"
 #include "LibraryExporter.h"
 
@@ -31,6 +32,10 @@ public:
 
     // Refresh the stats chart for the currently selected voicing (call during practice)
     void refreshStatsChart();
+    void refreshAccuracyChart();
+
+    // Drill status display (called from PluginEditor timer)
+    void setDrillStatus (bool active, int mastered, int total, int bpmLevel, float startBpm);
 
     // Callback when selection changes
     std::function<void (const juce::String& voicingId)> onSelectionChanged;
@@ -70,6 +75,14 @@ private:
     juce::TextButton editButton { "Edit" };
     juce::TextButton deleteButton { "Delete" };
     VoicingStatsChart statsChart;
+    AccuracyTimeChart accuracyChart;
+    juce::Label drillStatusLabel;
+    bool practiceActive = false;
+    bool drillActive = false;
+    int drillMastered = 0;
+    int drillTotal = 12;
+    int drillBpmLvl = 0;
+    float drillStartBpmVal = 120.0f;
 
     // --- Confirmation mode components ---
     juce::Label confirmHeader;

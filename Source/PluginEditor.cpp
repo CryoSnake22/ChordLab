@@ -616,6 +616,32 @@ void AudioPluginAudioProcessorEditor::timerCallback() {
     voicingLibraryPanel.refreshStatsChart();
     progressionLibraryPanel.refreshStatsChart();
     melodyLibraryPanel.refreshStatsChart();
+
+    // Refresh accuracy chart (throttled to every 30 frames = 0.5s)
+    static int accuracyRefreshCounter = 0;
+    if (++accuracyRefreshCounter >= 30) {
+      accuracyRefreshCounter = 0;
+      voicingLibraryPanel.refreshAccuracyChart();
+      progressionLibraryPanel.refreshAccuracyChart();
+      melodyLibraryPanel.refreshAccuracyChart();
+    }
+
+    // Update drill status on library panels
+    if (practicePanel.isDrillActive()) {
+      voicingLibraryPanel.setDrillStatus(true,
+          practicePanel.getDrillMasteredCount(), practicePanel.getDrillTotalKeys(),
+          practicePanel.getDrillBpmLevel(), practicePanel.getDrillStartBpm());
+      progressionLibraryPanel.setDrillStatus(true,
+          practicePanel.getDrillMasteredCount(), practicePanel.getDrillTotalKeys(),
+          practicePanel.getDrillBpmLevel(), practicePanel.getDrillStartBpm());
+      melodyLibraryPanel.setDrillStatus(true,
+          practicePanel.getDrillMasteredCount(), practicePanel.getDrillTotalKeys(),
+          practicePanel.getDrillBpmLevel(), practicePanel.getDrillStartBpm());
+    } else {
+      voicingLibraryPanel.setDrillStatus(false, 0, 12, 0, 120.0f);
+      progressionLibraryPanel.setDrillStatus(false, 0, 12, 0, 120.0f);
+      melodyLibraryPanel.setDrillStatus(false, 0, 12, 0, 120.0f);
+    }
   }
 
   // Disable library panel buttons during practice

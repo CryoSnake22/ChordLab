@@ -6,6 +6,7 @@
 #include "LibraryExporter.h"
 #include "ProgressionChartComponent.h"
 #include "VoicingStatsChart.h"
+#include "AccuracyTimeChart.h"
 
 class AudioPluginAudioProcessor;
 
@@ -30,6 +31,8 @@ public:
     std::vector<juce::String> getSelectedIds() const;
     int getSelectionCount() const;
     void refreshStatsChart();
+    void refreshAccuracyChart();
+    void setDrillStatus (bool active, int mastered, int total, int bpmLevel, float startBpm);
     void togglePlay();  // spacebar: play/stop in idle or edit mode
 
     std::function<void (const juce::String& progressionId)> onSelectionChanged;
@@ -67,6 +70,14 @@ private:
     juce::TextButton editButton { "Edit" };
     juce::TextButton deleteButton { "Delete" };
     VoicingStatsChart statsChart;
+    AccuracyTimeChart accuracyChart;
+    juce::Label drillStatusLabel;
+    bool practiceActive = false;
+    bool drillActive = false;
+    int drillMastered = 0;
+    int drillTotal = 12;
+    int drillBpmLvl = 0;
+    float drillStartBpmVal = 120.0f;
     int statsPlayingKey = -1;
 
     // Filtered display list

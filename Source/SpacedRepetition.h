@@ -82,6 +82,7 @@ public:
     };
 
     std::array<KeyStats, 12> getStatsForVoicing (const juce::String& voicingId) const;
+    std::array<KeyStats, 12> getStatsForVoicingAtBpm (const juce::String& voicingId, float bpm) const;
 
     // Per-voicing detailed history queries (for accuracy stats chart)
     std::vector<AttemptEntry> getDetailedHistory (const juce::String& voicingId, float bpm = -1.0f) const;

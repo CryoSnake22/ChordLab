@@ -265,6 +265,33 @@ SpacedRepetitionEngine::getStatsForVoicing (const juce::String& voicingId) const
     return stats;
 }
 
+std::array<SpacedRepetitionEngine::KeyStats, 12>
+SpacedRepetitionEngine::getStatsForVoicingAtBpm (const juce::String& voicingId, float bpm) const
+{
+    std::array<KeyStats, 12> stats {};
+    for (const auto& r : records)
+    {
+        if (r.voicingId != voicingId || r.keyIndex < 0 || r.keyIndex >= 12)
+            continue;
+
+        auto idx = static_cast<size_t> (r.keyIndex);
+        // Build qualities list from detailedHistory entries matching this BPM
+        for (const auto& entry : r.detailedHistory)
+        {
+            if (std::abs (entry.bpm - bpm) < 0.1f)
+            {
+                stats[idx].recentQualities.push_back (entry.quality);
+                if (entry.quality >= 3.0)
+                    stats[idx].successes++;
+                else
+                    stats[idx].failures++;
+                stats[idx].lastQuality = static_cast<int> (entry.quality);
+            }
+        }
+    }
+    return stats;
+}
+
 int SpacedRepetitionEngine::getTotalAttempts() const
 {
     int total = 0;

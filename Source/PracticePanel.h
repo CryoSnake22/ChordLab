@@ -8,7 +8,6 @@
 #include "ProgressionChartComponent.h"
 #include "MelodyModel.h"
 #include "MelodyChartComponent.h"
-#include "AccuracyTimeChart.h"
 #include "ScaleModel.h"
 #include <set>
 #include <random>
@@ -41,6 +40,11 @@ public:
     void stopPractice();
 
     bool isPracticing() const { return practicing; }
+    bool isDrillActive() const { return drillActive; }
+    int getDrillMasteredCount() const;
+    int getDrillTotalKeys() const;
+    int getDrillBpmLevel() const { return drillBpmLevel; }
+    float getDrillStartBpm() const { return drillStartBpm; }
     void setStartEnabled (bool enabled) { startButton.setEnabled (enabled); }
     bool isTimedActive() const { return timedPhase != TimedPhase::Inactive; }
     bool isTimedMode() const { return timedToggle.getToggleState(); }
@@ -120,11 +124,9 @@ private:
     juce::TextButton startButton { "Start" };
     juce::TextButton nextButton { "Next" };
     juce::TextButton playButton { "Play" };
-    juce::TextButton statsButton { "Stats" };
     juce::TextButton customButton { "Custom" };
     juce::ToggleButton timedToggle { "Timed" };
     juce::ToggleButton drillToggle { "Drill" };
-    juce::Label drillStatusLabel;
     juce::Label timingFeedbackLabel;
 
     // Key selector UI (visible when showingKeySelector)
@@ -263,12 +265,6 @@ private:
     juce::ToggleButton backingToggle { "Backing" };
     std::vector<int> backingChordNotes;
     int currentBackingChordIndex = -1;
-
-    // --- Accuracy stats chart ---
-    AccuracyTimeChart accuracyChart;
-    bool showingStats = false;
-    void onStatsToggle();
-    void refreshAccuracyChart();
 
     std::set<int> lastAttemptPCs;  // last notes user played (for proportional scoring on skip/timeout)
 

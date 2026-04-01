@@ -124,6 +124,23 @@ ProgressionLibraryPanel::ProgressionLibraryPanel (AudioPluginAudioProcessor& pro
     deleteButton.setColour (juce::TextButton::buttonColourId, juce::Colour (ChordyTheme::dangerMuted));
     addAndMakeVisible (deleteButton);
 
+    // --- Accuracy chart + drill status (shown during practice) ---
+    accuracyChart.onBpmChanged = [this] (float bpm) {
+        if (auto* param = processorRef.apvts.getParameter ("bpm"))
+        {
+            auto range = processorRef.apvts.getParameterRange ("bpm");
+            param->setValueNotifyingHost (range.convertTo0to1 (bpm));
+        }
+        refreshAccuracyChart();
+        refreshStatsChart();
+    };
+    addChildComponent (accuracyChart);
+
+    drillStatusLabel.setFont (juce::FontOptions (ChordyTheme::fontSmall));
+    drillStatusLabel.setColour (juce::Label::textColourId, juce::Colour (ChordyTheme::accent));
+    drillStatusLabel.setJustificationType (juce::Justification::centred);
+    addChildComponent (drillStatusLabel);
+
     statsChart.onKeyClicked = [this](int keyIndex) {
         if (panelState != PanelState::Idle) return;
         auto id = getSelectedProgressionId();
@@ -362,13 +379,50 @@ void ProgressionLibraryPanel::layoutIdleMode (juce::Rectangle<int> area)
     area.removeFromBottom (4);
     statsChart.setBounds (statsArea);
 
-    // Search bar
-    auto searchRow = area.removeFromTop (24);
-    searchEditor.setBounds (searchRow);
-    area.removeFromTop (4);
+    if (practiceActive)
+    {
+        // During practice: show accuracy chart + drill status instead of list/search/folders
+        folderCombo.setVisible (false);
+        searchEditor.setVisible (false);
+        progressionList.setVisible (false);
 
-    // List fills remaining space
-    progressionList.setBounds (area);
+        // Drill status label
+        if (drillActive)
+        {
+            drillStatusLabel.setVisible (true);
+            auto drillRow = area.removeFromBottom (18);
+            area.removeFromBottom (2);
+            drillStatusLabel.setBounds (drillRow);
+        }
+        else
+        {
+            drillStatusLabel.setVisible (false);
+        }
+
+        // Accuracy chart fills remaining space
+        accuracyChart.setBounds (area);
+        accuracyChart.setVisible (true);
+    }
+    else
+    {
+        // Normal mode: show list/search/folders, hide charts
+        accuracyChart.setVisible (false);
+        drillStatusLabel.setVisible (false);
+
+        auto folderRow = area.removeFromTop (24);
+        folderCombo.setBounds (folderRow);
+        folderCombo.setVisible (true);
+        area.removeFromTop (4);
+
+        auto searchRow = area.removeFromTop (24);
+        searchEditor.setBounds (searchRow);
+        searchEditor.setVisible (true);
+        area.removeFromTop (4);
+
+        // List fills remaining space
+        progressionList.setBounds (area);
+        progressionList.setVisible (true);
+    }
 }
 
 void ProgressionLibraryPanel::layoutEditMode (juce::Rectangle<int> area)
@@ -561,6 +615,9 @@ void ProgressionLibraryPanel::enterIdle()
 
 void ProgressionLibraryPanel::setButtonsEnabled (bool enabled)
 {
+    bool wasPracticing = practiceActive;
+    practiceActive = ! enabled;
+
     recordButton.setEnabled (enabled);
     playButton.setEnabled (enabled);
     editButton.setEnabled (enabled);
@@ -570,6 +627,10 @@ void ProgressionLibraryPanel::setButtonsEnabled (bool enabled)
     searchEditor.setEnabled (enabled);
     folderCombo.setEnabled (enabled);
     statsChart.setInterceptsMouseClicks (enabled, enabled);
+
+    // Re-layout when practice state changes
+    if (wasPracticing != practiceActive)
+        resized();
 }
 
 void ProgressionLibraryPanel::enterCountIn()
@@ -1154,11 +1215,60 @@ void ProgressionLibraryPanel::paintListBoxItem (int rowNumber, juce::Graphics& g
 
 void ProgressionLibraryPanel::refreshStatsChart()
 {
-    auto id = getSelectedProgressionId();
-    if (id.isNotEmpty())
-        statsChart.setStats (processorRef.spacedRepetition.getStatsForVoicing (id));
-    else
+    auto selectedId = getSelectedProgressionId();
+    if (selectedId.isEmpty())
+    {
         statsChart.clearStats();
+        return;
+    }
+
+    if (practiceActive)
+    {
+        float bpm = static_cast<float> (processorRef.tempoEngine.getEffectiveBpm());
+        statsChart.setStats (processorRef.spacedRepetition.getStatsForVoicingAtBpm (selectedId, bpm));
+    }
+    else
+    {
+        statsChart.setStats (processorRef.spacedRepetition.getStatsForVoicing (selectedId));
+    }
+}
+
+void ProgressionLibraryPanel::refreshAccuracyChart()
+{
+    auto selectedId = getSelectedProgressionId();
+    if (selectedId.isEmpty() || ! practiceActive)
+    {
+        accuracyChart.clearData();
+        return;
+    }
+
+    float currentBpm = static_cast<float> (processorRef.tempoEngine.getEffectiveBpm());
+
+    auto bpms = processorRef.spacedRepetition.getDistinctBpms (selectedId);
+    accuracyChart.setBpmOptions (bpms);
+    accuracyChart.selectBpm (currentBpm);
+
+    auto data = processorRef.spacedRepetition.getDetailedHistory (selectedId, currentBpm);
+    accuracyChart.setData (data);
+}
+
+void ProgressionLibraryPanel::setDrillStatus (bool active, int mastered, int total, int bpmLevel, float startBpm)
+{
+    drillActive = active;
+    drillMastered = mastered;
+    drillTotal = total;
+    drillBpmLvl = bpmLevel;
+    drillStartBpmVal = startBpm;
+
+    if (active)
+    {
+        float currentBpm = startBpm + static_cast<float> (bpmLevel) * 5.0f;
+        juce::String status = juce::String (mastered) + "/" + juce::String (total) + " mastered";
+        if (bpmLevel > 0)
+            status += " | BPM " + juce::String (static_cast<int> (currentBpm))
+                      + " (+" + juce::String (bpmLevel * 5) + ")";
+        drillStatusLabel.setText (status, juce::dontSendNotification);
+    }
 }
 
 void ProgressionLibraryPanel::selectedRowsChanged (int)
